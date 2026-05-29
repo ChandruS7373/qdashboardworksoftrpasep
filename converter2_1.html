@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Python ↔ UiPath XAML Converter</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:16px;background:#f0f4f8;color:#1f2933}
+  h1{margin:0 0 3px;font-size:20px}
+  .sub{color:#627d98;font-size:12px;margin-bottom:10px}
+  .tabs{display:flex;border-bottom:2px solid #cdd8e3;margin-bottom:10px}
+  .tab{background:none;border:none;border-bottom:3px solid transparent;color:#627d98;
+    padding:8px 22px;font-size:13px;cursor:pointer;font-weight:600;margin-bottom:-2px}
+  .tab.active{color:#2b6cb0;border-bottom-color:#2b6cb0}
+  .tab:hover{color:#2b6cb0}
+  .info{font-size:11px;color:#1a365d;background:#ebf8ff;border-left:3px solid #4299e1;
+    padding:6px 10px;margin-bottom:8px;border-radius:0 4px 4px 0;line-height:1.6}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .btn{background:#2b6cb0;color:#fff;border:none;padding:7px 15px;border-radius:5px;
+    font-size:12px;cursor:pointer;font-weight:600}
+  .btn:hover{background:#2c5282}
+  .btn.sec{background:#4a5568}.btn.sec:hover{background:#2d3748}
+  .btn.danger{background:#c53030}.btn.danger:hover{background:#9b2c2c}
+  .btn.grn{background:#276749}.btn.grn:hover{background:#1c4532}
+  label.upload{display:inline-block;background:#4a5568;color:#fff;padding:7px 15px;
+    border-radius:5px;font-size:12px;cursor:pointer;font-weight:600}
+  label.upload:hover{background:#2d3748}
+  input[type=file]{display:none}
+  select.sel{background:#fff;border:1px solid #cdd8e3;padding:6px 10px;border-radius:5px;
+    font-size:12px;color:#2d3748;cursor:pointer}
+  input.sel{border:1px solid #cdd8e3;border-radius:5px;padding:6px 10px;color:#2d3748;background:#fff}
+  input.sel:focus{outline:2px solid #4299e1;border-color:#4299e1}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;height:calc(100vh - 300px);min-height:320px}
+  .panel{background:#fff;border:1px solid #cdd8e3;border-radius:8px;display:flex;flex-direction:column;overflow:hidden}
+  .panel-hdr{padding:7px 12px;background:#edf2f7;border-bottom:1px solid #cdd8e3;font-weight:700;font-size:12px;color:#2d3748;display:flex;justify-content:space-between;align-items:center}
+  .badge{font-size:10px;font-weight:600;padding:2px 6px;border-radius:10px;background:#e2e8f0;color:#4a5568}
+  textarea{flex:1;border:none;padding:10px;resize:none;font-family:Menlo,Consolas,monospace;
+    font-size:11px;outline:none;white-space:pre;overflow:auto;color:#1a202c}
+  .status{margin-top:6px;font-size:12px;min-height:18px;padding:2px 0}
+  .status.err{color:#c53030;font-weight:600}
+  .status.ok{color:#276749;font-weight:600}
+  .status.warn{color:#b7791f;font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>Python ↔ UiPath XAML Converter</h1>
+<div class="sub">Works for <b>any application or URL</b> — Web (Selenium), Desktop (PyAutoGUI), APIs (Requests), File I/O, and more ↔ UiPath XAML</div>
+
+<div class="tabs">
+  <button class="tab active" id="tabFwd">▶&nbsp; Python → UiPath XAML</button>
+  <button class="tab"        id="tabRev">◀&nbsp; UiPath XAML → Python</button>
+</div>
+
+<div class="info" id="infoBar"></div>
+
+<div class="toolbar">
+  <label class="upload" id="uploadLabel">📂 Load File<input type="file" id="fileIn"></label>
+  <button class="btn"      id="btnConvert">⚡ Convert</button>
+  <button class="btn sec"  id="btnDownload">⬇ Download</button>
+  <button class="btn sec"  id="btnCopy">⧉ Copy Output</button>
+  <select class="sel" id="selSample" title="Choose a sample process type">
+    <option value="web">🌐 Web App Sample</option>
+    <option value="desktop">🖥 Desktop App Sample</option>
+    <option value="api">🔌 API + File I/O Sample</option>
+    <option value="erp">🏢 ERP / Form Fill Sample</option>
+  </select>
+  <button class="btn grn"  id="btnSample">📄 Load Sample</button>
+  <button class="btn danger" id="btnClear">✕ Clear</button>
+  <select class="sel" id="selDriver" title="Browser / driver for Python output">
+    <option value="Edge">Edge</option>
+    <option value="Chrome">Chrome</option>
+    <option value="Firefox">Firefox</option>
+  </select>
+  <input class="sel" id="txtBrowserPath" type="text" placeholder="Browser exe path..." style="width:310px;font-size:11px;" title="Full path to browser executable used in ui:StartProcess FileName attribute">
+  <button class="btn sec" id="btnResetPath" title="Reset to default path for selected browser">↺ Reset Path</button>
+  <input class="sel" id="txtAppUrl" type="text" placeholder="Override App URL (optional)" style="width:220px;font-size:11px;" title="Optional: override the target application URL used in generated code">
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <div class="panel-hdr"><span id="leftHdr">INPUT</span><span class="badge" id="leftBadge"></span></div>
+    <textarea id="inp" spellcheck="false" placeholder="Paste input here..."></textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-hdr"><span id="rightHdr">OUTPUT</span><span class="badge" id="rightBadge"></span></div>
+    <textarea id="out" spellcheck="false" readonly placeholder="Converted output will appear here..."></textarea>
+  </div>
+</div>
+<div class="status" id="status"></div>
+
+<script>
+'use strict';
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let MODE = 'fwd';
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const xe = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                           .replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+const xu = s  => String(s).replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+                           .replace(/&quot;/g,'"').replace(/&apos;/g,"'");
+
+function setStatus(msg, cls='') {
+  $('status').textContent = msg;
+  $('status').className = 'status ' + cls;
+}
+
+function durationToSeconds(dur) {
+  // hh:mm:ss or mm:ss or plain seconds
+  const parts = String(dur).split(':');
+  if (parts.length === 3) return +parts[0]*3600 + +parts[1]*60 + parseFloat(parts[2]);
+  if (parts.length === 2) return +parts[0]*60 + parseFloat(parts[1]);
+  return parseFloat(dur) || 1;
+}
+
+function secondsToDuration(sec) {
+  const s = parseFloat(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = Math.round(s % 60);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`;
+}
+
+// ─── Browser configuration ────────────────────────────────────────────────────
+
+const BROWSER_CFG = {
+  Edge:    { app: 'msedge.exe',  exe: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' },
+  Chrome:  { app: 'chrome.exe',  exe: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' },
+  Firefox: { app: 'firefox.exe', exe: 'C:\\Program Files\\Mozilla Firefox\\firefox.exe' },
+};
+
+function getBrowserApp(browser) { return (BROWSER_CFG[browser] || BROWSER_CFG.Edge).app; }
+function getBrowserExe(browser) { return (BROWSER_CFG[browser] || BROWSER_CFG.Edge).exe; }
+function getCustomBrowserExe(browser) {
+  const custom = ($('txtBrowserPath').value || '').trim();
+  return custom || getBrowserExe(browser);
+}
+function ensureTrailingSlash(url) {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    if (u.pathname === '/' && !url.endsWith('/')) return url + '/';
+  } catch(e) {}
+  return url;
+}
+
+// ─── Selector helpers ─────────────────────────────────────────────────────────
+
+function toSelectorAttr(by, loc) {
+  const e = s => xe(s);
+  switch (by.toUpperCase()) {
+    case 'ID':                return `id='${e(loc)}'`;
+    case 'NAME':              return `name='${e(loc)}'`;
+    case 'CLASS_NAME':        return `cls='${e(loc)}'`;
+    case 'CSS_SELECTOR':      return `css='${e(loc)}'`;
+    case 'XPATH':             return `xpath='${e(loc)}'`;
+    case 'LINK_TEXT':         return `innertext='${e(loc)}'`;
+    case 'PARTIAL_LINK_TEXT': return `innertext='${e(loc)}' matchType='contains'`;
+    case 'TAG_NAME':          return `tag='${e(loc.toUpperCase())}'`;
+    default:                  return `${by.toLowerCase()}='${e(loc)}'`;
+  }
+}
+
+// Always use tag='*' — UiPath matches any element type, avoids selector mismatch errors
+function inferTag(loc, elemType) {
+  return "tag='*'";
+}
+
+// Build full UiPath selector including <html app=...> scope based on browser
+function buildFullSelector(by, loc, elemType, browser) {
+  const app    = getBrowserApp(browser || 'Edge');
+  const locPart = toSelectorAttr(by, loc);
+  const tagPart = inferTag(loc, elemType);
+  const webctrl = tagPart ? `${locPart} ${tagPart}` : locPart;
+  return `&lt;html app='${app}' title='*' /&gt;&lt;webctrl ${webctrl} /&gt;`;
+}
+
+// Legacy — used for non-browser (desktop/file) activities
+function buildSelectorAttr(by, loc) {
+  return `&lt;html /&gt;&lt;webctrl ${toSelectorAttr(by, loc)} /&gt;`;
+}
+
+function normalizeLocator(by, loc) {
+  const up = by.toUpperCase();
+  if (up === 'CSS_SELECTOR') { const m = loc.match(/\.([\w-]+)/); if (m) return m[1]; }
+  if (up === 'CLASS_NAME' && loc.includes(' ')) {
+    const parts = loc.split(/\s+/).filter(Boolean); return parts[parts.length - 1] || loc;
+  }
+  return loc;
+}
+
+function parseWebctrlSelector(raw) {
+  const m = raw.match(/<webctrl\s+([^/]+?)\s*\/>/s);
+  if (!m) return null;
+  const a = m[1];
+  let r;
+  if ((r = a.match(/\bid='([^']+)'/)))        return {by:'ID',           loc:r[1]};
+  if ((r = a.match(/\bname='([^']+)'/)))      return {by:'NAME',         loc:r[1]};
+  if ((r = a.match(/\bcls='([^']+)'/)))       return {by:'CLASS_NAME',   loc:r[1]};
+  if ((r = a.match(/\bxpath='([^']+)'/)))     return {by:'XPATH',        loc:r[1]};
+  if ((r = a.match(/\bcss='([^']+)'/)))       return {by:'CSS_SELECTOR', loc:r[1]};
+  if ((r = a.match(/\binnertext='([^']+)'/))) return {by:'LINK_TEXT',    loc:r[1]};
+  if ((r = a.match(/\btag='([^']+)'/)))       return {by:'TAG_NAME',     loc:r[1].toLowerCase()};
+  return null;
+}
+
+function extractSelectorFromBlock(block) {
+  // 1. Classic Selector="..."
+  let m = block.match(/\bSelector="([^"]+)"/);
+  if (m) return parseWebctrlSelector(xu(m[1]));
+  // 2. Modern FullSelectorArgument="..." (uix: activities)
+  m = block.match(/\bFullSelectorArgument="([^"]+)"/);
+  if (m) return parseWebctrlSelector(xu(m[1]));
+  // 3. FuzzySelectorArgument as fallback
+  m = block.match(/\bFuzzySelectorArgument="([^"]+)"/);
+  if (m) return parseWebctrlSelector(xu(m[1]));
+  return null;
+}
+
+// ─── FORWARD: Python → UiPath XAML ───────────────────────────────────────────
+
+// Join continuation lines and multi-line parens
+function joinPyLines(src) {
+  const out = []; let buf = '', depth = 0;
+  for (const raw of src.split(/\r?\n/)) {
+    const s = raw.replace(/\s+$/, '');
+    if (!buf && !s.trim()) continue;
+    if (s.endsWith('\\')) { buf += s.slice(0,-1) + ' '; continue; }
+    const ns = s.replace(/"[^"]*"|'[^']*'/g, '');
+    depth += (ns.match(/\(/g)||[]).length - (ns.match(/\)/g)||[]).length;
+    depth += (ns.match(/\[/g)||[]).length - (ns.match(/\]/g)||[]).length;
+    buf += s + ' ';
+    if (depth <= 0) { out.push(buf.trim()); buf = ''; depth = 0; }
+  }
+  if (buf) out.push(buf.trim());
+  return out;
+}
+
+const PW_HINTS = ['password','passwd','pwd','secret'];
+
+const PY = {
+  // ── Selenium ──────────────────────────────────────────────────────────────
+  driverGet:      /driver\.get\(\s*["']([^"']+)["']\s*\)/,
+  waitClick:      /wait\.until\(\s*EC\.element_to_be_clickable\(\s*\(\s*By\.(\w+)\s*,\s*["']([^"']+)["']\s*\)\s*\)\s*\)\s*\.click\(\s*\)/,
+  waitKeys:       /wait\.until\(\s*EC\.element_to_be_clickable\(\s*\(\s*By\.(\w+)\s*,\s*["']([^"']+)["']\s*\)\s*\)\s*\)\s*\.send_keys\(\s*["']([^"']*)["']\s*\)/,
+  waitVis:        /(\w+)\s*=\s*wait\.until\(\s*EC\.visibility_of_element_located\(\s*\(\s*By\.(\w+)\s*,\s*["']([^"']+)["']\s*\)\s*\)\s*\)/,
+  waitVisTxt:     /(\w+)\s*=\s*wait\.until\(\s*EC\.visibility_of_element_located\(\s*\(\s*By\.(\w+)\s*,\s*["']([^"']+)["']\s*\)\s*\)\s*\)\.text/,
+  assertDisp:     /assert\s+(\w+)\.is_displayed\(\s*\)/,
+  findSendKeys:   /(?:driver\.)?find_element\(\s*By\.(\w+)\s*,\s*["']([^"']+)["']\s*\)\s*\.send_keys\(\s*["']([^"']*)["']\s*\)/,
+  findClick:      /(?:driver\.)?find_element\(\s*By\.(\w+)\s*,\s*["']([^"']+)["']\s*\)\s*\.click\(\s*\)/,
+  findText:       /(\w+)\s*=\s*(?:driver\.)?find_element\(\s*By\.(\w+)\s*,\s*["']([^"']+)["']\s*\)\.text/,
+  assertEq:       /assert\s+(\w+)\s*==\s*["']([^"']*)["']/,
+  urlContains:    /wait\.until\(\s*EC\.url_contains\(\s*["']([^"']+)["']\s*\)\s*\)/,
+
+  // ── PyAutoGUI ─────────────────────────────────────────────────────────────
+  pyClick:        /pyautogui\.click\(\s*(\d+)\s*,\s*(\d+)\s*\)/,
+  pyWrite:        /pyautogui\.(?:write|typewrite)\(\s*["']([^"']*)["'](?:\s*,\s*interval=[\d.]+)?\s*\)/,
+  pyHotkey:       /pyautogui\.hotkey\(\s*((?:["'][^"']+["']\s*,?\s*)+)\)/,
+  pyScroll:       /pyautogui\.scroll\(\s*(-?\d+)\s*\)/,
+  pyMoveTo:       /pyautogui\.moveTo\(\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*duration=[\d.]+)?\s*\)/,
+  pyScreenshot:   /pyautogui\.screenshot\(\s*(?:["']([^"']+)["'])?\s*\)/,
+
+  // ── General ───────────────────────────────────────────────────────────────
+  sleep:          /time\.sleep\(\s*([\d.]+)\s*\)/,
+  printStr:       /print\(\s*f?["']([^"']*)["']\s*\)/,
+  printVar:       /print\(\s*(\w+(?:\s*,\s*\w+)*)\s*\)/,
+  inputCall:      /(\w+)\s*=\s*input\(\s*["']([^"']*)["']\s*\)/,
+  comment:        /^#\s*(.*)/,
+
+  // ── Requests ──────────────────────────────────────────────────────────────
+  httpGet:        /(?:(\w+)\s*=\s*)?requests\.get\(\s*["']([^"']+)["']/,
+  httpPost:       /(?:(\w+)\s*=\s*)?requests\.post\(\s*["']([^"']+)["']/,
+
+  // ── File I/O ──────────────────────────────────────────────────────────────
+  fileRead:       /(?:(\w+)\s*=\s*)?open\(\s*["']([^"']+)["']\s*\)\.read\(\)/,
+  fileReadMode:   /(?:(\w+)\s*=\s*)?open\(\s*["']([^"']+)["']\s*,\s*["']r["']\s*\)\.read\(\)/,
+  fileWrite:      /open\(\s*["']([^"']+)["']\s*,\s*["']w["']\s*\)\.write\(\s*["']([^"']*)["']\s*\)/,
+  fileWriteVar:   /open\(\s*["']([^"']+)["']\s*,\s*["']w["']\s*\)\.write\(\s*(\w+)\s*\)/,
+
+  // ── Assign ────────────────────────────────────────────────────────────────
+  assign:         /^(\w+)\s*=\s*(.+)$/,
+};
+
+function parsePython(src) {
+  const steps = [], pending = {};
+  for (const line of joinPyLines(src)) {
+    const s = line.trim();
+    if (!s) continue;
+    let m;
+
+    // Skip try: — the body lines ARE the workflow steps, parse them normally
+    if (/^try\s*:$/.test(s)) continue;
+
+    // Stop at except / finally — error handlers are not workflow steps
+    if (/^(?:except[\s(:]|finally\s*:)/.test(s)) break;
+
+    // Skip imports, driver/options/service setup, and ALL_CAPS config constants
+    if (/^(?:import |from |driver\s*=\s*webdriver|wait\s*=\s*WebDriverWait|options\s*=\s*\w|service\s*=\s*\w|edge_options\b|driver\.maximize|options\.add_argument|options\.binary_location|options\.add_experimental|[A-Z][A-Z_]+\s*=)/.test(s)) continue;
+
+    // Skip blank/structural lines that aren't automation steps
+    if (/^(?:driver\.quit\(\)|sys\.exit\(|driver\.save_screenshot\()/.test(s)) continue;
+
+    // Comment — skip pure separator lines (all dashes / equals / stars)
+    if ((m = s.match(PY.comment))) {
+      const txt = m[1].trim();
+      if (!txt || /^[\-=*#+\s]+$/.test(txt)) continue; // separator line, skip
+      steps.push({action:'comment', text:txt}); continue;
+    }
+
+    // Navigate
+    if ((m = s.match(PY.driverGet))) {
+      steps.push({action:'navigate', url:m[1]}); continue;
+    }
+
+    // URL wait
+    if ((m = s.match(PY.urlContains))) {
+      steps.push({action:'comment', text:`Wait for URL containing "${m[1]}"`}); continue;
+    }
+
+    // Wait + click
+    if ((m = s.match(PY.waitClick))) {
+      steps.push({action:'click', by:m[1], loc:normalizeLocator(m[1],m[2])}); continue;
+    }
+
+    // Wait + send_keys
+    if ((m = s.match(PY.waitKeys))) {
+      steps.push({action:'type', by:m[1], loc:normalizeLocator(m[1],m[2]), val:m[3],
+        isPw: PW_HINTS.some(h => m[2].toLowerCase().includes(h))}); continue;
+    }
+
+    // Wait visibility (text shortcut)
+    if ((m = s.match(PY.waitVisTxt))) {
+      pending[m[1]] = {kind:'text', by:m[2], loc:normalizeLocator(m[2],m[3])}; continue;
+    }
+
+    // Wait visibility
+    if ((m = s.match(PY.waitVis))) {
+      pending[m[1]] = {kind:'vis', by:m[2], loc:normalizeLocator(m[2],m[3])}; continue;
+    }
+
+    // assert is_displayed
+    if ((m = s.match(PY.assertDisp))) {
+      if (pending[m[1]]?.kind === 'vis')
+        steps.push({action:'visible', by:pending[m[1]].by, loc:pending[m[1]].loc});
+      continue;
+    }
+
+    // Text assign then assert ==
+    if ((m = s.match(PY.findText))) {
+      pending[m[1]] = {kind:'text', by:m[2], loc:normalizeLocator(m[2],m[3])}; continue;
+    }
+    if ((m = s.match(PY.assertEq))) {
+      if (pending[m[1]]?.kind === 'text')
+        steps.push({action:'verify', by:pending[m[1]].by, loc:pending[m[1]].loc, val:m[2]});
+      continue;
+    }
+
+    // find_element send_keys
+    if ((m = s.match(PY.findSendKeys))) {
+      steps.push({action:'type', by:m[1], loc:normalizeLocator(m[1],m[2]), val:m[3],
+        isPw: PW_HINTS.some(h => m[2].toLowerCase().includes(h))}); continue;
+    }
+
+    // find_element click
+    if ((m = s.match(PY.findClick))) {
+      steps.push({action:'click', by:m[1], loc:normalizeLocator(m[1],m[2])}); continue;
+    }
+
+    // PyAutoGUI
+    if ((m = s.match(PY.pyClick)))     { steps.push({action:'pyClick',   x:m[1], y:m[2]}); continue; }
+    if ((m = s.match(PY.pyWrite)))     { steps.push({action:'pyWrite',   val:m[1]}); continue; }
+    if ((m = s.match(PY.pyHotkey)))    { steps.push({action:'pyHotkey',  keys:m[1].replace(/['"]/g,'').split(',').map(k=>k.trim())}); continue; }
+    if ((m = s.match(PY.pyMoveTo)))    { steps.push({action:'pyMoveTo',  x:m[1], y:m[2]}); continue; }
+    if ((m = s.match(PY.pyScreenshot))){ steps.push({action:'screenshot',path:m[1]||'screenshot.png'}); continue; }
+
+    // General
+    if ((m = s.match(PY.sleep)))      { steps.push({action:'sleep',  seconds:m[1]}); continue; }
+    if ((m = s.match(PY.printStr)))   { steps.push({action:'log',    text:m[1]}); continue; }
+    if ((m = s.match(PY.printVar)))   { steps.push({action:'log',    text:m[1]}); continue; }
+    if ((m = s.match(PY.inputCall)))  { steps.push({action:'input',  varName:m[1], prompt:m[2]}); continue; }
+
+    // HTTP
+    if ((m = s.match(PY.httpGet)))    { steps.push({action:'httpGet',  resultVar:m[1]||'response', url:m[2]}); continue; }
+    if ((m = s.match(PY.httpPost)))   { steps.push({action:'httpPost', resultVar:m[1]||'response', url:m[2]}); continue; }
+
+    // File I/O
+    if ((m = s.match(PY.fileRead)))   { steps.push({action:'fileRead',  varName:m[1]||'fileContent', path:m[2]}); continue; }
+    if ((m = s.match(PY.fileReadMode))){ steps.push({action:'fileRead', varName:m[1]||'fileContent', path:m[2]}); continue; }
+    if ((m = s.match(PY.fileWrite)))  { steps.push({action:'fileWrite', path:m[1], content:m[2]}); continue; }
+    if ((m = s.match(PY.fileWriteVar))){ steps.push({action:'fileWrite',path:m[1], varName:m[2]}); continue; }
+
+    // Generic assign (last resort)
+    if ((m = s.match(PY.assign)) && !/[(\[{]/.test(s.substring(s.indexOf('=')+1).trim()[0]||'')) {
+      // Only handle simple scalar assignments — skip complex expressions
+      const rhs = s.substring(s.indexOf('=')+1).trim();
+      if (/^["'\d]/.test(rhs) || rhs === 'True' || rhs === 'False' || rhs === 'None') {
+        steps.push({action:'assign', varName:m[1], val:rhs}); continue;
+      }
+    }
+  }
+  return steps;
+}
+
+// ── XAML emitters ─────────────────────────────────────────────────────────────
+
+function targetBlock(actName, by, loc, elemType, browser) {
+  const sel = buildFullSelector(by, loc, elemType, browser);
+  return `      <ui:${actName}.Target>\n        <ui:Target Selector="${sel}" TimeoutMS="30000" WaitForReady="INTERACTIVE" />\n      </ui:${actName}.Target>`;
+}
+
+// Launch browser using ui:StartProcess — matches UiPath Studio clipboard format exactly
+function emitStartProcess(url, browser) {
+  const b    = browser || 'Edge';
+  const exe  = xe(getCustomBrowserExe(b));
+  const cleanUrl = ensureTrailingSlash(url);
+  const args = xe(cleanUrl);
+  const disp = xe(`Launch ${b}: ${cleanUrl}`);
+  return `    <ui:StartProcess WorkingDirectory="{x:Null}" DisplayName="${disp}" FileName="${exe}" Arguments="${args}" sap:VirtualizedContainerService.HintSize="450,120" />
+    <Delay DisplayName="Wait for browser to load" Duration="00:00:03" sap:VirtualizedContainerService.HintSize="450,123" />`;
+}
+
+function emitClick(s, browser) {
+  return `    <ui:Click DisplayName="Click '${xe(s.loc)}'" MouseButton="BTN_LEFT" SimulateClick="False" ContinueOnError="False">\n${targetBlock('Click',s.by,s.loc,'click',browser)}\n    </ui:Click>`;
+}
+
+function emitTypeInto(s, browser) {
+  const pw = s.isPw ? ' EmptyField="True"' : '';
+  return `    <ui:TypeInto DisplayName="Type '${xe(s.loc)}'" Text="${xe(s.val||'')}"${pw} SimulateType="False" ContinueOnError="False">\n${targetBlock('TypeInto',s.by,s.loc,'type',browser)}\n    </ui:TypeInto>`;
+}
+
+function emitElementExists(s, idx, browser) {
+  const vn = `elemExists_${idx}`;
+  return `    <ui:ElementExists DisplayName="Exists '${xe(s.loc)}'" Result="[${vn}]">
+${targetBlock('ElementExists',s.by,s.loc,'visible',browser)}
+    </ui:ElementExists>
+    <If DisplayName="Assert visible: ${xe(s.loc)}" Condition="[Not ${vn}]">
+      <If.Then>
+        <Throw DisplayName="Assert Failed">
+          <Throw.Exception>
+            <InArgument x:TypeArguments="x:Exception">[New System.Exception("Element not visible: ${xe(s.loc)}")]</InArgument>
+          </Throw.Exception>
+        </Throw>
+      </If.Then>
+    </If>`;
+}
+
+function emitGetText(s, idx, browser) {
+  const vn = `txt_${idx}`;
+  const exp = xe(s.val || '');
+  return `    <ui:GetText DisplayName="GetText '${xe(s.loc)}'" Result="[${vn}]">
+${targetBlock('GetText',s.by,s.loc,'getText',browser)}
+    </ui:GetText>
+    <If DisplayName="Verify '${xe(s.loc)}' = '${exp}'" Condition="[${vn} &lt;&gt; &quot;${exp}&quot;]">
+      <If.Then>
+        <Throw DisplayName="Verify Failed">
+          <Throw.Exception>
+            <InArgument x:TypeArguments="x:Exception">[New System.Exception("Expected: &quot;${exp}&quot; Got: &quot;" &amp; ${vn} &amp; "&quot;")]</InArgument>
+          </Throw.Exception>
+        </Throw>
+      </If.Then>
+    </If>`;
+}
+
+function emitDelay(s) {
+  return `    <Delay DisplayName="Delay ${s.seconds}s" Duration="${secondsToDuration(s.seconds)}" />`;
+}
+
+function emitLogMessage(s) {
+  return `    <ui:LogMessage DisplayName="Log: ${xe(s.text.substring(0,40))}" Level="Info" Message="${xe(s.text)}" />`;
+}
+
+function emitInputDialog(s) {
+  return `    <ui:InputDialog DisplayName="Input: ${xe(s.prompt||'Enter value')}" Label="${xe(s.prompt||'Enter value')}" Result="[${xe(s.varName||'inputResult')}]" />`;
+}
+
+function emitAssign(s) {
+  return `    <Assign DisplayName="Assign ${xe(s.varName)}" To="[${xe(s.varName)}]" Value="${xe(s.val)}" />`;
+}
+
+function emitHttpRequest(s) {
+  const method = s.action === 'httpGet' ? 'GET' : 'POST';
+  const vn = s.resultVar || 'httpResponse';
+  return `    <ui:HttpClientActivity DisplayName="HTTP ${method} '${xe(s.url)}'" EndPoint="${xe(s.url)}" Method="${method}">
+      <ui:HttpClientActivity.ResponseContent>
+        <OutArgument x:TypeArguments="x:String">[${vn}]</OutArgument>
+      </ui:HttpClientActivity.ResponseContent>
+    </ui:HttpClientActivity>`;
+}
+
+function emitReadTextFile(s) {
+  const vn = s.varName || 'fileContent';
+  return `    <ui:ReadTextFile DisplayName="Read File '${xe(s.path)}'" FilePath="${xe(s.path)}" Output="[${vn}]" />`;
+}
+
+function emitWriteTextFile(s) {
+  const content = s.varName ? `[${s.varName}]` : xe(s.content||'');
+  return `    <ui:WriteTextFile DisplayName="Write File '${xe(s.path)}'" FilePath="${xe(s.path)}" Text="${content}" />`;
+}
+
+function emitCoordClick(s) {
+  return `    <ui:Click DisplayName="Click (${s.x},${s.y})" CursorPosition.Position="Absolute" CursorPosition.OffsetX="${s.x}" CursorPosition.OffsetY="${s.y}" SimulateClick="False" />`;
+}
+
+function emitSendHotkey(s) {
+  const keys = (s.keys||[]);
+  const mods = keys.slice(0, keys.length-1).join('+');
+  const key  = keys[keys.length-1] || '';
+  return `    <ui:SendHotkey DisplayName="Hotkey '${keys.join('+')}'" Key="${xe(key)}" ModifierKeys="${xe(mods)}" />`;
+}
+
+function emitComment(s) {
+  return `    <!-- ${xe(s.text)} -->`;
+}
+
+function emitTakeScreenshot(s) {
+  return `    <ui:TakeScreenshot DisplayName="Take Screenshot" FileName="${xe(s.path||'screenshot.png')}" />`;
+}
+
+function buildXaml(steps) {
+  const browser    = $('selDriver').value || 'Edge';
+  const urlOverride = ($('txtAppUrl').value || '').trim();
+  if (urlOverride) {
+    steps = steps.map(s => s.action === 'navigate' ? {...s, url: urlOverride} : s);
+  }
+  const vars = [], blocks = [];
+  steps.forEach((s, i) => {
+    const idx = i + 1;
+    switch (s.action) {
+      case 'navigate':   blocks.push(emitStartProcess(s.url, browser)); break;
+      case 'click':      blocks.push(emitClick(s, browser)); break;
+      case 'type':       blocks.push(emitTypeInto(s, browser)); break;
+      case 'visible':
+        vars.push(`      <Variable x:TypeArguments="x:Boolean" Default="False" Name="elemExists_${idx}" />`);
+        blocks.push(emitElementExists(s, idx, browser)); break;
+      case 'verify':
+        vars.push(`      <Variable x:TypeArguments="x:String" Default="" Name="txt_${idx}" />`);
+        blocks.push(emitGetText(s, idx, browser)); break;
+      case 'sleep':      blocks.push(emitDelay(s)); break;
+      case 'log':        blocks.push(emitLogMessage(s)); break;
+      case 'input':      blocks.push(emitInputDialog(s)); break;
+      case 'assign':     blocks.push(emitAssign(s)); break;
+      case 'httpGet':
+      case 'httpPost':   blocks.push(emitHttpRequest(s)); break;
+      case 'fileRead':   blocks.push(emitReadTextFile(s)); break;
+      case 'fileWrite':  blocks.push(emitWriteTextFile(s)); break;
+      case 'pyClick':    blocks.push(emitCoordClick(s)); break;
+      case 'pyMoveTo':   blocks.push(`    <!-- MoveTo (${s.x},${s.y}) — use coordinate-based Click in UiPath -->`); break;
+      case 'pyWrite':    blocks.push(emitTypeInto({loc:'active-field', by:'TAG_NAME', val:s.val, isPw:false}, browser)); break;
+      case 'pyHotkey':   blocks.push(emitSendHotkey(s)); break;
+      case 'screenshot': blocks.push(emitTakeScreenshot(s)); break;
+      case 'comment':    if (s.text.trim()) blocks.push(emitComment(s)); break;
+    }
+  });
+
+  const varBlock = vars.length
+    ? `    <Sequence.Variables>\n${vars.join('\n')}\n    </Sequence.Variables>\n` : '';
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<Activity mc:Ignorable="sap sap2010" x:Class="ConvertedWorkflow"
+  xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+  xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+  xmlns:ui="http://schemas.uipath.com/workflow/activities"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Sequence DisplayName="ConvertedWorkflow">
+${varBlock}${blocks.join('\n')}
+  </Sequence>
+</Activity>`;
+}
+
+// ─── REVERSE: UiPath XAML → Python ────────────────────────────────────────────
+
+function parseXaml(src) {
+  const events = [];
+
+  function scan(pattern, type, extractor) {
+    const re = new RegExp(pattern, 'gs');
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      const ev = {pos: m.index, type, raw: m[0]};
+      if (extractor) Object.assign(ev, extractor(m[0]));
+      events.push(ev);
+    }
+  }
+
+  // ── Classic activities ─────────────────────────────────────────────────────
+  scan('<(?:ui:)?Click\\b[^>]*>[\\s\\S]*?</(?:ui:)?Click>',         'click');
+  scan('<(?:ui:)?TypeInto\\b[^>]*>[\\s\\S]*?</(?:ui:)?TypeInto>',   'type', raw => {
+    const txt  = raw.match(/\bText="([^"]*)"/);
+    const isPw = /EmptyField="True"|IsPassword="True"/.test(raw);
+    return { val: txt ? xu(txt[1]) : '', isPw };
+  });
+  scan('<(?:ui:)?ElementExists\\b[^>]*>[\\s\\S]*?</(?:ui:)?ElementExists>', 'elemExists');
+  scan('<(?:ui:)?GetText\\b[^>]*>[\\s\\S]*?</(?:ui:)?GetText>',     'getText');
+  scan('<If\\b[^>]*>[\\s\\S]*?</If>',                               'if', raw => {
+    const cond = raw.match(/\bCondition="([^"]*)"/);
+    return { condition: cond ? xu(cond[1]) : '' };
+  });
+
+  // ── Modern activities (uix: prefix) ────────────────────────────────────────
+  scan('<uix:NClick\\b[^>]*(?:/>|>[\\s\\S]*?</uix:NClick>)',        'click');
+  scan('<uix:NTypeInto\\b[^>]*>[\\s\\S]*?</uix:NTypeInto>',         'type', raw => {
+    const txt  = raw.match(/\bText="([^"]*)"/);
+    const isPw = /IsPassword="True"/.test(raw);
+    return { val: txt ? xu(txt[1]) : '', isPw, modern: true };
+  });
+
+  // NApplicationCard — extracts URL and browser type
+  scan('<uix:NApplicationCard\\b[^>]*>[\\s\\S]*?</uix:NApplicationCard>', 'appCard', raw => {
+    const urlM = raw.match(/\bUrl="([^"]+)"/);
+    const browserM = raw.match(/\bBrowserType="([^"]+)"/);
+    return {
+      url: urlM ? xu(urlM[1]) : '',
+      browser: browserM ? browserM[1] : 'Edge'
+    };
+  });
+
+  // StartProcess — browser launched with URL as argument (classic or ui: prefix)
+  scan('<(?:ui:)?StartProcess\\b[^>]*/>', 'startProcess', raw => {
+    const fn   = raw.match(/\bFileName="([^"]+)"/);
+    const args = raw.match(/\bArguments="([^"]+)"/);
+    const fileName = fn ? xu(fn[1]).toLowerCase() : '';
+    let browser = 'Edge';
+    if (fileName.includes('chrome'))  browser = 'Chrome';
+    else if (fileName.includes('firefox')) browser = 'Firefox';
+    return { url: args ? xu(args[1]) : '', browser, fileName: fn ? xu(fn[1]) : '' };
+  });
+
+  // ── General activities ─────────────────────────────────────────────────────
+  scan('<Delay\\b[^>]*/>', 'delay', raw => {
+    const d = raw.match(/\bDuration="([^"]+)"/);
+    return { duration: d ? d[1] : '00:00:01' };
+  });
+  scan('<ui:LogMessage\\b[^>]*/>', 'log', raw => {
+    const msg = raw.match(/\bMessage="([^"]*)"/);
+    return { text: msg ? xu(msg[1]) : '' };
+  });
+  scan('<ui:MessageBox\\b[^>]*/>', 'message', raw => {
+    // Text value may be VB expression like ["Logged in"]
+    const txt = raw.match(/\bText="([^"]*)"/);
+    let text = txt ? xu(txt[1]) : '';
+    // Strip VB expression brackets if simple string
+    text = text.replace(/^\["([^"]+)"\]$/, '$1').replace(/^\[&quot;([^&]+)&quot;\]$/, '$1');
+    return { text };
+  });
+  scan('<ui:InputDialog\\b[^>]*/>', 'inputDialog', raw => {
+    const lbl = raw.match(/\bLabel="([^"]*)"/);
+    const res = raw.match(/\bResult="\[(\w+)\]"/);
+    return { prompt: lbl ? xu(lbl[1]) : 'Enter value', varName: res ? res[1] : 'inputResult' };
+  });
+  scan('<Assign\\b[^>]*/>', 'assign', raw => {
+    const to  = raw.match(/\bTo="\[(\w+)\]"/);
+    const val = raw.match(/\bValue="([^"]*)"/);
+    return { varName: to ? to[1] : 'variable', val: val ? xu(val[1]) : '' };
+  });
+  scan('<ui:NavigateTo\\b[^>]*/>', 'navigate', raw => {
+    const u = raw.match(/\bUrl="([^"]+)"/);
+    return { url: u ? xu(u[1]) : '' };
+  });
+  scan('<ui:HttpClientActivity\\b[^>]*>[\\s\\S]*?</ui:HttpClientActivity>', 'http', raw => {
+    const ep = raw.match(/\bEndPoint="([^"]+)"/);
+    const mt = raw.match(/\bMethod="([^"]+)"/);
+    const rv = raw.match(/\bOutArgument[^>]*>\[(\w+)\]/);
+    return { url: ep ? xu(ep[1]) : '', method: mt ? mt[1] : 'GET', resultVar: rv ? rv[1] : 'response' };
+  });
+  scan('<ui:ReadTextFile\\b[^>]*/>', 'fileRead', raw => {
+    const fp = raw.match(/\bFilePath="([^"]+)"/);
+    const op = raw.match(/\bOutput="\[(\w+)\]"/);
+    return { path: fp ? xu(fp[1]) : 'file.txt', varName: op ? op[1] : 'fileContent' };
+  });
+  scan('<ui:WriteTextFile\\b[^>]*/>', 'fileWrite', raw => {
+    const fp = raw.match(/\bFilePath="([^"]+)"/);
+    const tx = raw.match(/\bText="([^"]*)"/);
+    return { path: fp ? xu(fp[1]) : 'file.txt', content: tx ? xu(tx[1]) : '' };
+  });
+  scan('<ui:TakeScreenshot\\b[^>]*/>', 'screenshot', raw => {
+    const fn = raw.match(/\bFileName="([^"]+)"/);
+    return { path: fn ? xu(fn[1]) : 'screenshot.png' };
+  });
+  scan('<ui:SendHotkey\\b[^>]*/>', 'hotkey', raw => {
+    const key  = raw.match(/\bKey="([^"]*)"/);
+    const mods = raw.match(/\bModifierKeys="([^"]*)"/);
+    return { key: key ? xu(key[1]) : '', mods: mods ? xu(mods[1]) : '' };
+  });
+  scan('<ui:Click\\b[^>]*CursorPosition[^>]*/>', 'coordClick', raw => {
+    const x = raw.match(/\bOffsetX="(\d+)"/);
+    const y = raw.match(/\bOffsetY="(\d+)"/);
+    return { x: x ? x[1] : '0', y: y ? y[1] : '0' };
+  });
+
+  if (!events.length) {
+    throw new Error(
+      'No supported UiPath activities found.\n' +
+      'Supported: NApplicationCard, NTypeInto, NClick (modern), TypeInto, Click, ' +
+      'ElementExists, GetText, Delay, LogMessage, MessageBox, InputDialog, Assign, ' +
+      'NavigateTo, HttpClientActivity, ReadTextFile, WriteTextFile, TakeScreenshot, SendHotkey'
+    );
+  }
+
+  events.sort((a, b) => a.pos - b.pos);
+
+  const steps = [];
+  let i = 0;
+
+  while (i < events.length) {
+    const ev = events[i];
+    switch (ev.type) {
+      case 'appCard': {
+        steps.push({action:'appCard', url:ev.url, browser:ev.browser});
+        i++;
+        break;
+      }
+      case 'startProcess': {
+        // Treat as browser launch if the argument looks like a URL
+        if (ev.url && /^https?:\/\//.test(ev.url)) {
+          steps.push({action:'appCard', url:ev.url, browser:ev.browser});
+        }
+        i++;
+        // Skip the immediately following Delay (our "wait for browser" delay)
+        if (i < events.length && events[i].type === 'delay') i++;
+        break;
+      }
+      case 'click': {
+        const sel = extractSelectorFromBlock(ev.raw);
+        if (sel) steps.push({action:'click', ...sel});
+        i++;
+        break;
+      }
+      case 'type': {
+        const sel = extractSelectorFromBlock(ev.raw);
+        if (sel) steps.push({action:'type', ...sel, val:ev.val, isPw:ev.isPw});
+        i++;
+        break;
+      }
+      case 'elemExists': {
+        const sel = extractSelectorFromBlock(ev.raw);
+        if (sel) steps.push({action:'visible', ...sel});
+        i++;
+        if (i < events.length && events[i].type === 'if') i++;
+        break;
+      }
+      case 'getText': {
+        const sel = extractSelectorFromBlock(ev.raw);
+        let expected = '';
+        if (i+1 < events.length && events[i+1].type === 'if') {
+          const cm = events[i+1].condition.match(/<>\s*"([^"]*)"/);
+          if (cm) expected = cm[1];
+        }
+        if (sel) steps.push({action:'verify', ...sel, val:expected});
+        i++;
+        if (i < events.length && events[i].type === 'if') i++;
+        break;
+      }
+      case 'navigate':    steps.push({action:'navigate', url:ev.url}); i++; break;
+      case 'delay':       steps.push({action:'sleep', seconds:String(durationToSeconds(ev.duration))}); i++; break;
+      case 'log':
+      case 'message':     steps.push({action:'log', text:ev.text}); i++; break;
+      case 'inputDialog': steps.push({action:'input', varName:ev.varName, prompt:ev.prompt}); i++; break;
+      case 'assign':      steps.push({action:'assign', varName:ev.varName, val:ev.val}); i++; break;
+      case 'http':        steps.push({action: ev.method==='POST'?'httpPost':'httpGet', url:ev.url, resultVar:ev.resultVar}); i++; break;
+      case 'fileRead':    steps.push({action:'fileRead', path:ev.path, varName:ev.varName}); i++; break;
+      case 'fileWrite':   steps.push({action:'fileWrite', path:ev.path, content:ev.content}); i++; break;
+      case 'screenshot':  steps.push({action:'screenshot', path:ev.path}); i++; break;
+      case 'hotkey': {
+        const allKeys = [ev.mods, ev.key].filter(Boolean).join('+').split('+').map(k=>k.trim()).filter(Boolean);
+        steps.push({action:'hotkey', keys:allKeys}); i++; break;
+      }
+      case 'coordClick':  steps.push({action:'pyClick', x:ev.x, y:ev.y}); i++; break;
+      default:            i++;
+    }
+  }
+
+  if (!steps.length) {
+    throw new Error('Parsed 0 steps. Check that your XAML has valid Selector or FullSelectorArgument on Target elements.');
+  }
+  return steps;
+}
+
+// ── Python emitters ────────────────────────────────────────────────────────────
+
+function toVarName(loc) {
+  return (loc.replace(/[^a-zA-Z0-9]/g, '_').replace(/^(\d)/, '_$1') || 'elem').toLowerCase();
+}
+
+function buildPython(steps) {
+  const browser = $('selDriver').value || 'Edge';
+
+  // Determine what's needed
+  const hasBrowser  = steps.some(s => ['click','type','visible','verify','navigate','appCard'].includes(s.action));
+  const hasSleep    = steps.some(s => s.action === 'sleep');
+  const hasPrint    = steps.some(s => ['log','message'].includes(s.action));
+  const hasReq      = steps.some(s => ['httpGet','httpPost'].includes(s.action));
+  const hasFile     = steps.some(s => ['fileRead','fileWrite'].includes(s.action));
+  const hasPyauto   = steps.some(s => ['pyClick','pyWrite','pyHotkey','pyMoveTo'].includes(s.action));
+  const hasInput    = steps.some(s => s.action === 'input');
+
+  const appCard = steps.find(s => s.action === 'appCard');
+  const urlOverride = ($('txtAppUrl').value || '').trim();
+  const appUrl  = urlOverride || appCard?.url || steps.find(s => s.action === 'navigate')?.url || 'https://your-app-url/';
+  const appBrowser = appCard?.browser || browser;
+
+  const lines = [];
+
+  // ── Imports ────────────────────────────────────────────────────────────────
+  lines.push('import os');
+  lines.push('import sys');
+  if (hasSleep || hasPyauto) lines.push('import time');
+  if (hasBrowser)            lines.push('import tempfile');
+  if (hasBrowser) {
+    lines.push('from selenium import webdriver');
+    lines.push(`from selenium.webdriver.${appBrowser.toLowerCase()}.service import Service as ${appBrowser}Service`);
+    lines.push(`from selenium.webdriver.${appBrowser.toLowerCase()}.options import Options as ${appBrowser}Options`);
+    lines.push('from selenium.webdriver.common.by import By');
+    lines.push('from selenium.webdriver.support.ui import WebDriverWait');
+    lines.push('from selenium.webdriver.support import expected_conditions as EC');
+  }
+  if (hasReq)     lines.push('import requests');
+  if (hasPyauto)  lines.push('import pyautogui');
+  lines.push('');
+
+  // ── Browser setup ──────────────────────────────────────────────────────────
+  if (hasBrowser) {
+    const bLower = appBrowser.toLowerCase();
+    // Determine default binary + driver paths per browser
+    const binaries = {
+      edge:    String.raw`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+      chrome:  String.raw`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+      firefox: String.raw`C:\Program Files\Mozilla Firefox\firefox.exe`,
+    };
+    const drivers = {
+      edge:    String.raw`os.path.expanduser(r"~\.cache\selenium\msedgedriver\win64\147.0.3912.60\msedgedriver.exe")`,
+      chrome:  String.raw`os.path.expanduser(r"~\.cache\selenium\chromedriver\win64\chromedriver.exe")`,
+      firefox: String.raw`os.path.expanduser(r"~\.cache\selenium\geckodriver\win64\geckodriver.exe")`,
+    };
+    const binary = binaries[bLower] || binaries.edge;
+    const driver_path = drivers[bLower] || drivers.edge;
+
+    lines.push('# ---------------------------------------------------------------------------');
+    lines.push(`# Browser configuration — ${appBrowser}`);
+    lines.push('# ---------------------------------------------------------------------------');
+    lines.push(`${appBrowser.toUpperCase()}_BINARY = r"${binary}"`);
+    lines.push(`${appBrowser.toUpperCase()}_DRIVER = ${driver_path}`);
+    lines.push('');
+    lines.push(`options = ${appBrowser}Options()`);
+    lines.push(`options.binary_location = ${appBrowser.toUpperCase()}_BINARY`);
+    lines.push('options.add_argument("--start-maximized")');
+    lines.push('options.add_argument("--disable-gpu")');
+    lines.push('options.add_argument("--disable-extensions")');
+    lines.push('options.add_argument("--disable-dev-shm-usage")');
+    if (appBrowser === 'Edge') {
+      lines.push('options.add_argument("--remote-debugging-pipe")  # more reliable on Windows 11');
+    }
+    lines.push('options.add_argument(f"--user-data-dir={tempfile.mkdtemp()}")  # fresh profile, no conflicts');
+    lines.push('');
+    lines.push(`service = ${appBrowser}Service(executable_path=${appBrowser.toUpperCase()}_DRIVER)`);
+    lines.push(`driver = webdriver.${appBrowser}(service=service, options=options)`);
+    lines.push('wait = WebDriverWait(driver, 15)');
+    lines.push('');
+  }
+
+  // ── Main try block ─────────────────────────────────────────────────────────
+  lines.push('try:');
+  if (hasBrowser && appUrl) {
+    lines.push(`    driver.get("${appUrl}")`);
+  }
+
+  const used = new Set();
+  function uniqVar(base) {
+    if (!used.has(base)) { used.add(base); return base; }
+    let n = 2; while (used.has(`${base}_${n}`)) n++;
+    const v = `${base}_${n}`; used.add(v); return v;
+  }
+
+  for (const s of steps) {
+    if (s.action === 'appCard') continue; // handled above
+    if (s.action === 'navigate' && s.url === appUrl) continue; // avoid duplicate
+
+    const byExpr = s.by ? `By.${s.by}, "${s.loc}"` : null;
+
+    switch (s.action) {
+      case 'navigate':
+        lines.push(`    driver.get("${s.url}")`);
+        break;
+      case 'click':
+        lines.push(`    wait.until(EC.element_to_be_clickable((${byExpr}))).click()`);
+        break;
+      case 'type':
+        lines.push(`    wait.until(EC.element_to_be_clickable((${byExpr}))).send_keys("${s.val||''}")`);
+        break;
+      case 'visible': {
+        const vn = uniqVar(toVarName(s.loc));
+        lines.push(`    ${vn} = wait.until(EC.visibility_of_element_located((${byExpr})))`);
+        lines.push(`    assert ${vn}.is_displayed()`);
+        break;
+      }
+      case 'verify': {
+        const vn = uniqVar(toVarName(s.loc) + '_text');
+        lines.push(`    ${vn} = wait.until(EC.visibility_of_element_located((${byExpr}))).text`);
+        lines.push(`    assert ${vn} == "${s.val||''}"`);
+        break;
+      }
+      case 'sleep': {
+        const sec = parseFloat(s.seconds);
+        lines.push(`    time.sleep(${Number.isInteger(sec) ? sec : sec.toFixed(1)})`);
+        break;
+      }
+      case 'log':
+        lines.push(`    print("${s.text.replace(/"/g,'\\"')}")`);
+        break;
+      case 'input': {
+        const vn = s.varName || 'userInput';
+        lines.push(`    ${vn} = input("${(s.prompt||'Enter value:').replace(/"/g,'\\"')}")`);
+        break;
+      }
+      case 'assign':
+        lines.push(`    ${s.varName} = ${s.val}`);
+        break;
+      case 'httpGet': {
+        const vn = s.resultVar || 'response';
+        lines.push(`    ${vn} = requests.get("${s.url}")`);
+        lines.push(`    ${vn}.raise_for_status()`);
+        break;
+      }
+      case 'httpPost': {
+        const vn = s.resultVar || 'response';
+        lines.push(`    ${vn} = requests.post("${s.url}")  # TODO: add json= or data= payload`);
+        lines.push(`    ${vn}.raise_for_status()`);
+        break;
+      }
+      case 'fileRead': {
+        const vn = s.varName || 'fileContent';
+        lines.push(`    with open("${s.path}", "r", encoding="utf-8") as f:`);
+        lines.push(`        ${vn} = f.read()`);
+        break;
+      }
+      case 'fileWrite': {
+        const content = s.varName ? s.varName : `"${(s.content||'').replace(/"/g,'\\"')}"`;
+        lines.push(`    with open("${s.path}", "w", encoding="utf-8") as f:`);
+        lines.push(`        f.write(${content})`);
+        break;
+      }
+      case 'pyClick':
+        lines.push(`    pyautogui.click(${s.x}, ${s.y})`);
+        break;
+      case 'pyWrite':
+        lines.push(`    pyautogui.write("${(s.val||'').replace(/"/g,'\\"')}", interval=0.05)`);
+        break;
+      case 'hotkey':
+        lines.push(`    pyautogui.hotkey(${(s.keys||[]).map(k=>`"${k}"`).join(', ')})`);
+        break;
+      case 'screenshot':
+        lines.push(`    driver.save_screenshot("${s.path||'screenshot.png'}")`);
+        break;
+    }
+  }
+
+  lines.push('');
+  lines.push('    print("All steps completed successfully.")');
+  lines.push('');
+  lines.push('except AssertionError as e:');
+  lines.push('    print(f"[ASSERTION FAILED] {e}")');
+  if (hasBrowser) {
+    lines.push('    driver.save_screenshot("failure.png")');
+  }
+  lines.push('    sys.exit(1)');
+  lines.push('');
+  lines.push('except Exception as e:');
+  lines.push('    print(f"[ERROR] {type(e).__name__}: {e}")');
+  if (hasBrowser) {
+    lines.push('    driver.save_screenshot("error.png")');
+  }
+  lines.push('    sys.exit(1)');
+  lines.push('');
+  if (hasBrowser) {
+    lines.push('finally:');
+    lines.push('    driver.quit()');
+  }
+
+  return lines.join('\n');
+}
+
+// ─── UI Config ────────────────────────────────────────────────────────────────
+
+const CFG = {
+  fwd: {
+    leftHdr:   'Python  (input)',
+    rightHdr:  'UiPath XAML  (output)',
+    leftBadge: '.py',
+    rightBadge:'.xaml',
+    accept:    '.py,.txt',
+    fileLabel: '📂 Load .py file',
+    dlFile:    'ConvertedWorkflow.xaml',
+    dlMime:    'application/xaml+xml',
+    dlBtn:     '⬇ Download XAML',
+    cpBtn:     '⧉ Copy XAML',
+    inPH:      'Paste any Python automation script here (Selenium, PyAutoGUI, Requests, file I/O, etc.)...',
+    info:      [
+      '<b>Python → XAML maps:</b>',
+      'driver.get() → ui:StartProcess (browser exe + URL) + Delay',
+      '&nbsp;&nbsp;find_element / wait.until click/send_keys → Click / TypeInto',
+      '&nbsp;&nbsp;visibility + assert → ElementExists',
+      '&nbsp;&nbsp;.text + assert == → GetText + If/Throw',
+      '&nbsp;&nbsp;time.sleep() → Delay',
+      '&nbsp;&nbsp;print() → LogMessage',
+      '&nbsp;&nbsp;input() → InputDialog',
+      '&nbsp;&nbsp;requests.get/post → HttpClientActivity',
+      '&nbsp;&nbsp;open().read/write → ReadTextFile / WriteTextFile',
+      '&nbsp;&nbsp;pyautogui.click → Click (coordinate)',
+      '&nbsp;&nbsp;pyautogui.write → TypeInto',
+      '&nbsp;&nbsp;pyautogui.hotkey → SendHotkey',
+      '&nbsp;&nbsp;var = value → Assign',
+    ].join('  ·  '),
+  },
+  rev: {
+    leftHdr:   'UiPath XAML  (input)',
+    rightHdr:  'Python  (output)',
+    leftBadge: '.xaml',
+    rightBadge:'.py',
+    accept:    '.xaml,.xml',
+    fileLabel: '📂 Load .xaml file',
+    dlFile:    'converted_automation.py',
+    dlMime:    'text/x-python',
+    dlBtn:     '⬇ Download .py',
+    cpBtn:     '⧉ Copy Python',
+    inPH:      'Paste your UiPath XAML workflow here (Classic or Modern activities)...',
+    info:      [
+      '<b>XAML → Python maps:</b>',
+      'StartProcess / NApplicationCard → webdriver setup + driver.get()',
+      '&nbsp;&nbsp;NTypeInto / TypeInto → send_keys()',
+      '&nbsp;&nbsp;NClick / Click → .click()',
+      '&nbsp;&nbsp;ElementExists → visibility_of_element_located + assert',
+      '&nbsp;&nbsp;GetText + If/Throw → .text + assert ==',
+      '&nbsp;&nbsp;Delay → time.sleep()',
+      '&nbsp;&nbsp;LogMessage / MessageBox → print()',
+      '&nbsp;&nbsp;InputDialog → input()',
+      '&nbsp;&nbsp;StartProcess (browser URL arg) → driver.get()',
+      '&nbsp;&nbsp;HttpClientActivity → requests.get/post()',
+      '&nbsp;&nbsp;ReadTextFile / WriteTextFile → open().read/write()',
+      '&nbsp;&nbsp;TakeScreenshot → driver.save_screenshot()',
+      '&nbsp;&nbsp;SendHotkey → pyautogui.hotkey()',
+      '&nbsp;&nbsp;Assign → variable =',
+    ].join('  ·  '),
+  },
+};
+
+function applyMode(m) {
+  MODE = m;
+  const c = CFG[m];
+  $('tabFwd').classList.toggle('active', m === 'fwd');
+  $('tabRev').classList.toggle('active', m === 'rev');
+  $('leftHdr').textContent    = c.leftHdr;
+  $('rightHdr').textContent   = c.rightHdr;
+  $('leftBadge').textContent  = c.leftBadge;
+  $('rightBadge').textContent = c.rightBadge;
+  $('fileIn').accept          = c.accept;
+  $('uploadLabel').childNodes[0].nodeValue = c.fileLabel;
+  $('btnDownload').textContent = c.dlBtn;
+  $('btnCopy').textContent     = c.cpBtn;
+  $('inp').placeholder         = c.inPH;
+  $('infoBar').innerHTML       = c.info;
+  // Show browser selector and URL override only on XAML→Python tab
+  $('selDriver').style.display  = m === 'rev' ? 'inline-block' : 'none';
+  $('txtAppUrl').style.display  = 'inline-block'; // always show — useful in both directions
+  $('inp').value = ''; $('out').value = ''; setStatus('');
+}
+
+// ─── Event handlers ───────────────────────────────────────────────────────────
+
+$('tabFwd').onclick = () => applyMode('fwd');
+$('tabRev').onclick = () => applyMode('rev');
+
+$('btnConvert').onclick = () => {
+  const src = $('inp').value.trim();
+  if (!src) return setStatus('Input is empty.', 'err');
+  try {
+    if (MODE === 'fwd') {
+      const steps = parsePython(src);
+      if (!steps.length) return setStatus(
+        'No recognisable actions found. Supported: find_element, wait.until, send_keys, click, driver.get, time.sleep, print, input, requests, open, pyautogui.*', 'warn');
+      $('out').value = buildXaml(steps);
+      setStatus(`✓ Converted ${steps.length} step${steps.length !== 1 ? 's' : ''} to UiPath XAML.`, 'ok');
+    } else {
+      const steps = parseXaml(src);
+      $('out').value = buildPython(steps);
+      setStatus(`✓ Converted ${steps.length} step${steps.length !== 1 ? 's' : ''} to Python.`, 'ok');
+    }
+    $('rightBadge').textContent = $('out').value.split('\n').length + ' lines';
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'err');
+  }
+};
+
+$('btnDownload').onclick = () => {
+  const val = $('out').value;
+  if (!val) return setStatus('Nothing to download — convert first.', 'warn');
+  const c = CFG[MODE];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([val], {type: c.dlMime}));
+  a.download = c.dlFile; a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus(`Downloaded ${c.dlFile}`, 'ok');
+};
+
+$('btnCopy').onclick = async () => {
+  const val = $('out').value;
+  if (!val) return setStatus('Nothing to copy — convert first.', 'warn');
+  try { await navigator.clipboard.writeText(val); }
+  catch { $('out').select(); document.execCommand('copy'); }
+  setStatus('Copied to clipboard.', 'ok');
+};
+
+$('btnClear').onclick = () => {
+  $('inp').value = ''; $('out').value = '';
+  $('leftBadge').textContent = ''; $('rightBadge').textContent = '';
+  setStatus('');
+};
+
+$('fileIn').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    $('inp').value = ev.target.result;
+    $('leftBadge').textContent = f.name.split('.').pop();
+    setStatus(`Loaded: ${f.name}`, 'ok');
+  };
+  r.readAsText(f);
+  e.target.value = '';
+};
+
+// ─── Sample data ──────────────────────────────────────────────────────────────
+
+// ─── Samples — one per process type, both directions ─────────────────────────
+
+const SAMPLES = {
+
+  // ── 1. Web App (generic login + form, any internal web portal) ────────────
+  web: {
+    py: `# Generic web application — login + form submit
+# Works for any URL: replace driver.get() with your app's URL
+driver.get("https://your-intranet-app.com/login")
+
+# Step 1: Login
+wait.until(EC.element_to_be_clickable((By.ID, "username"))).send_keys("admin")
+wait.until(EC.element_to_be_clickable((By.ID, "password"))).send_keys("P@ssw0rd")
+wait.until(EC.element_to_be_clickable((By.ID, "loginBtn"))).click()
+wait.until(EC.url_contains("dashboard"))
+print("Login successful")
+
+# Step 2: Navigate to form
+wait.until(EC.element_to_be_clickable((By.ID, "newRecordBtn"))).click()
+
+# Step 3: Fill form fields
+wait.until(EC.element_to_be_clickable((By.ID, "firstName"))).send_keys("Alice")
+wait.until(EC.element_to_be_clickable((By.ID, "lastName"))).send_keys("Johnson")
+wait.until(EC.element_to_be_clickable((By.ID, "email"))).send_keys("alice@example.com")
+wait.until(EC.element_to_be_clickable((By.ID, "department"))).send_keys("Finance")
+time.sleep(1)
+
+# Step 4: Submit and verify
+wait.until(EC.element_to_be_clickable((By.ID, "submitBtn"))).click()
+confirmation = wait.until(EC.visibility_of_element_located((By.CLASS_NAME, "success-message"))).text
+assert confirmation == "Record saved successfully."
+print("Form submitted and verified")
+`,
+    xaml: `<?xml version="1.0" encoding="utf-8"?>
+<Activity mc:Ignorable="sap sap2010" x:Class="WebAppWorkflow"
+  xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+  xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+  xmlns:ui="http://schemas.uipath.com/workflow/activities"
+  xmlns:uix="http://schemas.uipath.com/workflow/activities/uix"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Sequence DisplayName="WebAppWorkflow">
+    <Sequence.Variables>
+      <Variable x:TypeArguments="x:String" Default="" Name="txt_11" />
+    </Sequence.Variables>
+    <ui:StartProcess WorkingDirectory="{x:Null}" DisplayName="Launch Edge Browser" FileName="C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe" Arguments="https://your-intranet-app.com/login" sap:VirtualizedContainerService.HintSize="450,120" />
+    <Delay DisplayName="Wait for browser to load" Duration="00:00:03" />
+    <ui:TypeInto DisplayName="Enter Username" Text="admin" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='username' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:TypeInto DisplayName="Enter Password" Text="P@ssw0rd" EmptyField="True" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='password' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:Click DisplayName="Click Login" MouseButton="BTN_LEFT" SimulateClick="False" ContinueOnError="False">
+      <ui:Click.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='loginBtn' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:Click.Target>
+    </ui:Click>
+    <ui:LogMessage DisplayName="Login OK" Level="Info" Message="Login successful" />
+    <ui:Click DisplayName="Click New Record" MouseButton="BTN_LEFT" SimulateClick="False" ContinueOnError="False">
+      <ui:Click.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='newRecordBtn' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:Click.Target>
+    </ui:Click>
+    <ui:TypeInto DisplayName="First Name" Text="Alice" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='firstName' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:TypeInto DisplayName="Last Name" Text="Johnson" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='lastName' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:TypeInto DisplayName="Email" Text="alice@example.com" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='email' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:TypeInto DisplayName="Department" Text="Finance" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='department' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <Delay DisplayName="Wait 1s" Duration="00:00:01" />
+    <ui:Click DisplayName="Submit Form" MouseButton="BTN_LEFT" SimulateClick="False" ContinueOnError="False">
+      <ui:Click.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='submitBtn' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:Click.Target>
+    </ui:Click>
+    <ui:GetText DisplayName="Get Confirmation" Result="[txt_11]">
+      <ui:GetText.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl cls='success-message' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:GetText.Target>
+    </ui:GetText>
+    <If DisplayName="Verify: Record saved" Condition="[txt_11 &lt;&gt; &quot;Record saved successfully.&quot;]">
+      <If.Then>
+        <Throw DisplayName="Verify Failed">
+          <Throw.Exception>
+            <InArgument x:TypeArguments="x:Exception">[New System.Exception("Expected confirmation message. Got: " &amp; txt_11)]</InArgument>
+          </Throw.Exception>
+        </Throw>
+      </If.Then>
+    </If>
+    <ui:LogMessage DisplayName="Done" Level="Info" Message="Form submitted and verified" />
+  </Sequence>
+</Activity>`
+  },
+
+  // ── 2. Desktop App (PyAutoGUI — any Windows desktop app) ─────────────────
+  desktop: {
+    py: `# Desktop application automation using PyAutoGUI
+# Works for any Windows app (Notepad, SAP, Excel, custom ERP, etc.)
+import pyautogui
+import time
+
+# Open the application (via hotkey or click on taskbar)
+pyautogui.hotkey("win", "r")
+time.sleep(0.5)
+
+# Type the app executable in Run dialog
+pyautogui.write("notepad.exe", interval=0.05)
+pyautogui.hotkey("enter")
+time.sleep(2)
+
+# Type content into the app window
+pyautogui.click(600, 400)
+pyautogui.write("Automated report generated by RPA bot.", interval=0.03)
+time.sleep(0.5)
+
+# Save the file using keyboard shortcut
+pyautogui.hotkey("ctrl", "s")
+time.sleep(1)
+
+# Type filename in Save dialog
+pyautogui.write("report_output.txt", interval=0.05)
+pyautogui.hotkey("enter")
+time.sleep(1)
+
+print("Desktop automation complete")
+`,
+    xaml: `<?xml version="1.0" encoding="utf-8"?>
+<Activity mc:Ignorable="sap sap2010" x:Class="DesktopAppWorkflow"
+  xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+  xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+  xmlns:ui="http://schemas.uipath.com/workflow/activities"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Sequence DisplayName="DesktopAppWorkflow">
+    <ui:SendHotkey DisplayName="Open Run Dialog" Key="r" ModifierKeys="Win" />
+    <Delay DisplayName="Wait 0.5s" Duration="00:00:01" />
+    <ui:TypeInto DisplayName="Type app name" Text="notepad.exe" SimulateType="False" ContinueOnError="False" />
+    <ui:SendHotkey DisplayName="Press Enter" Key="enter" ModifierKeys="" />
+    <Delay DisplayName="Wait for app to open" Duration="00:00:02" />
+    <ui:Click DisplayName="Click in app window" CursorPosition.Position="Absolute" CursorPosition.OffsetX="600" CursorPosition.OffsetY="400" SimulateClick="False" />
+    <ui:TypeInto DisplayName="Type report content" Text="Automated report generated by RPA bot." SimulateType="False" ContinueOnError="False" />
+    <Delay DisplayName="Wait 0.5s" Duration="00:00:01" />
+    <ui:SendHotkey DisplayName="Save File (Ctrl+S)" Key="s" ModifierKeys="Ctrl" />
+    <Delay DisplayName="Wait for dialog" Duration="00:00:01" />
+    <ui:TypeInto DisplayName="Type filename" Text="report_output.txt" SimulateType="False" ContinueOnError="False" />
+    <ui:SendHotkey DisplayName="Confirm Save" Key="enter" ModifierKeys="" />
+    <Delay DisplayName="Wait 1s" Duration="00:00:01" />
+    <ui:LogMessage DisplayName="Done" Level="Info" Message="Desktop automation complete" />
+  </Sequence>
+</Activity>`
+  },
+
+  // ── 3. API + File I/O (no browser needed) ────────────────────────────────
+  api: {
+    py: `# API integration + file processing — no browser required
+import requests
+import time
+
+# Step 1: Read input data from a file
+input_data = open("C:/RPA/input/employees.txt").read()
+print("Input file loaded")
+
+# Step 2: Call an API with the data
+response = requests.post("https://hr-api.company.com/api/employees/sync")
+
+# Step 3: Write the API response to an output file
+open("C:/RPA/output/sync_result.txt", "w").write("Sync completed")
+
+# Step 4: Log completion
+time.sleep(2)
+print("Sync complete — result written to output file")
+
+# Step 5: Call another API to trigger downstream process
+notification = requests.get("https://hr-api.company.com/api/notify")
+print("Downstream notification sent")
+`,
+    xaml: `<?xml version="1.0" encoding="utf-8"?>
+<Activity mc:Ignorable="sap sap2010" x:Class="ApiFileWorkflow"
+  xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+  xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+  xmlns:ui="http://schemas.uipath.com/workflow/activities"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Sequence DisplayName="ApiFileWorkflow">
+    <Sequence.Variables>
+      <Variable x:TypeArguments="x:String" Default="" Name="fileContent" />
+      <Variable x:TypeArguments="x:String" Default="" Name="response" />
+      <Variable x:TypeArguments="x:String" Default="" Name="notification" />
+    </Sequence.Variables>
+    <ui:ReadTextFile DisplayName="Read Input File" FilePath="C:/RPA/input/employees.txt" Output="[fileContent]" />
+    <ui:LogMessage DisplayName="File Loaded" Level="Info" Message="Input file loaded" />
+    <ui:HttpClientActivity DisplayName="POST: Sync Employees" EndPoint="https://hr-api.company.com/api/employees/sync" Method="POST">
+      <ui:HttpClientActivity.ResponseContent>
+        <OutArgument x:TypeArguments="x:String">[response]</OutArgument>
+      </ui:HttpClientActivity.ResponseContent>
+    </ui:HttpClientActivity>
+    <ui:WriteTextFile DisplayName="Write Output File" FilePath="C:/RPA/output/sync_result.txt" Text="Sync completed" />
+    <Delay DisplayName="Wait 2s" Duration="00:00:02" />
+    <ui:LogMessage DisplayName="Sync Complete" Level="Info" Message="Sync complete — result written to output file" />
+    <ui:HttpClientActivity DisplayName="GET: Send Notification" EndPoint="https://hr-api.company.com/api/notify" Method="GET">
+      <ui:HttpClientActivity.ResponseContent>
+        <OutArgument x:TypeArguments="x:String">[notification]</OutArgument>
+      </ui:HttpClientActivity.ResponseContent>
+    </ui:HttpClientActivity>
+    <ui:LogMessage DisplayName="Notification Sent" Level="Info" Message="Downstream notification sent" />
+  </Sequence>
+</Activity>`
+  },
+
+  // ── 4. ERP / Corporate Portal form fill ───────────────────────────────────
+  erp: {
+    py: `# ERP / Corporate portal — purchase order creation
+# Paste your ERP URL in the "Override App URL" field above
+driver.get("https://your-erp.company.com/procurement")
+
+# Login to ERP
+wait.until(EC.element_to_be_clickable((By.NAME, "SAP_User"))).send_keys("proc_user")
+wait.until(EC.element_to_be_clickable((By.NAME, "SAP_Password"))).send_keys("ERP@2024")
+wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']"))).click()
+print("ERP login successful")
+time.sleep(2)
+
+# Navigate to Purchase Orders
+wait.until(EC.element_to_be_clickable((By.ID, "menu-procurement"))).click()
+wait.until(EC.element_to_be_clickable((By.ID, "menu-new-po"))).click()
+
+# Fill purchase order details
+wait.until(EC.element_to_be_clickable((By.ID, "vendor-code"))).send_keys("V-10045")
+wait.until(EC.element_to_be_clickable((By.ID, "item-code"))).send_keys("ITEM-2024-001")
+wait.until(EC.element_to_be_clickable((By.ID, "quantity"))).send_keys("50")
+wait.until(EC.element_to_be_clickable((By.ID, "unit-price"))).send_keys("125.00")
+wait.until(EC.element_to_be_clickable((By.ID, "delivery-date"))).send_keys("2025-06-30")
+print("PO form filled")
+
+# Approve and submit
+wait.until(EC.element_to_be_clickable((By.ID, "btn-approve"))).click()
+wait.until(EC.element_to_be_clickable((By.ID, "btn-confirm"))).click()
+time.sleep(1)
+
+# Verify PO number assigned
+po_number = wait.until(EC.visibility_of_element_located((By.CLASS_NAME, "po-reference"))).text
+print("PO created with reference: " + po_number)
+
+# Write result to log file
+open("C:/RPA/output/po_log.txt", "w").write("PO Reference: " + po_number)
+`,
+    xaml: `<?xml version="1.0" encoding="utf-8"?>
+<Activity mc:Ignorable="sap sap2010" x:Class="ERPPurchaseOrder"
+  xmlns="http://schemas.microsoft.com/netfx/2009/xaml/activities"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:sap="http://schemas.microsoft.com/netfx/2009/xaml/activities/presentation"
+  xmlns:sap2010="http://schemas.microsoft.com/netfx/2010/xaml/activities/presentation"
+  xmlns:ui="http://schemas.uipath.com/workflow/activities"
+  xmlns:uix="http://schemas.uipath.com/workflow/activities/uix"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Sequence DisplayName="ERPPurchaseOrder">
+    <Sequence.Variables>
+      <Variable x:TypeArguments="x:String" Default="" Name="txt_po" />
+    </Sequence.Variables>
+    <ui:StartProcess WorkingDirectory="{x:Null}" DisplayName="Launch Edge Browser" FileName="C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe" Arguments="https://your-erp.company.com/procurement" sap:VirtualizedContainerService.HintSize="450,120" />
+    <Delay DisplayName="Wait for browser to load" Duration="00:00:03" />
+    <ui:TypeInto DisplayName="Enter Username" Text="proc_user" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl name='SAP_User' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:TypeInto DisplayName="Enter Password" Text="ERP@2024" EmptyField="True" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl name='SAP_Password' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:Click DisplayName="Click Submit" MouseButton="BTN_LEFT" SimulateClick="False" ContinueOnError="False">
+      <ui:Click.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl xpath='//button[@type=&quot;submit&quot;]' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:Click.Target>
+    </ui:Click>
+    <ui:LogMessage DisplayName="ERP Login OK" Level="Info" Message="ERP login successful" />
+    <Delay DisplayName="Wait 2s" Duration="00:00:02" />
+    <ui:Click DisplayName="Open Procurement Menu" MouseButton="BTN_LEFT" SimulateClick="False" ContinueOnError="False">
+      <ui:Click.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='menu-procurement' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:Click.Target>
+    </ui:Click>
+    <ui:Click DisplayName="Click New PO" MouseButton="BTN_LEFT" SimulateClick="False" ContinueOnError="False">
+      <ui:Click.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='menu-new-po' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:Click.Target>
+    </ui:Click>
+    <ui:TypeInto DisplayName="Vendor Code" Text="V-10045" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='vendor-code' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:TypeInto DisplayName="Item Code" Text="ITEM-2024-001" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='item-code' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:TypeInto DisplayName="Quantity" Text="50" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='quantity' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:TypeInto DisplayName="Unit Price" Text="125.00" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='unit-price' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:TypeInto DisplayName="Delivery Date" Text="2025-06-30" SimulateType="False" ContinueOnError="False">
+      <ui:TypeInto.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='delivery-date' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:TypeInto.Target>
+    </ui:TypeInto>
+    <ui:LogMessage DisplayName="PO Form Filled" Level="Info" Message="PO form filled" />
+    <ui:Click DisplayName="Click Approve" MouseButton="BTN_LEFT" SimulateClick="False" ContinueOnError="False">
+      <ui:Click.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='btn-approve' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:Click.Target>
+    </ui:Click>
+    <ui:Click DisplayName="Click Confirm" MouseButton="BTN_LEFT" SimulateClick="False" ContinueOnError="False">
+      <ui:Click.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl id='btn-confirm' tag='*' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:Click.Target>
+    </ui:Click>
+    <Delay DisplayName="Wait 1s" Duration="00:00:01" />
+    <ui:GetText DisplayName="Get PO Reference" Result="[txt_po]">
+      <ui:GetText.Target>
+        <ui:Target Selector="&lt;html app='msedge.exe' title='*' /&gt;&lt;webctrl cls='po-reference' /&gt;" TimeoutMS="30000" WaitForReady="INTERACTIVE" />
+      </ui:GetText.Target>
+    </ui:GetText>
+    <ui:LogMessage DisplayName="PO Created" Level="Info" Message="[&quot;PO created with reference: &quot; &amp; txt_po]" />
+    <ui:WriteTextFile DisplayName="Write PO Log" FilePath="C:/RPA/output/po_log.txt" Text="[&quot;PO Reference: &quot; &amp; txt_po]" />
+  </Sequence>
+</Activity>`
+  }
+};
+
+$('btnSample').onclick = () => {
+  const type = $('selSample').value;
+  const s = SAMPLES[type] || SAMPLES.web;
+  $('inp').value = MODE === 'fwd' ? s.py : s.xaml;
+  $('leftBadge').textContent = MODE === 'fwd' ? '.py' : '.xaml';
+  const labels = {web:'Web App', desktop:'Desktop App', api:'API + File I/O', erp:'ERP / Form Fill'};
+  setStatus(`${labels[type]} sample loaded — click Convert.`, 'ok');
+};
+
+// Boot
+applyMode('fwd');
+
+// ── Browser path selector wiring ─────────────────────────────────────────────
+function syncBrowserPath() {
+  $('txtBrowserPath').value = getBrowserExe($('selDriver').value);
+}
+syncBrowserPath(); // initialise on load
+$('selDriver').addEventListener('change', syncBrowserPath);
+$('btnResetPath').onclick = syncBrowserPath;
+</script>
+</body>
+</html>

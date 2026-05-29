@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.streamlit/secrets.toml
+.ngrok_token
+
+# Database — never commit, ephemeral on Streamlit Cloud
+*.db
+*.sqlite
+
+# Virtual environment
+Project_Tracker/
+
+# Windows launchers / VPS-only scripts
+launch.py
+api_server.py
+install.bat
+Launch Qualesce Agent.bat
+
+# Data exports / temp files
+projects.xlsx
+users.xlsx
+bool
+list
+converter2_1.html
