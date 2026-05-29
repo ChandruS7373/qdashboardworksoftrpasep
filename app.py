@@ -353,6 +353,20 @@ def load_projects() -> pd.DataFrame:
         for col in PROJECT_COLS:
             if col not in df.columns:
                 df[col] = ""
+        for _nc in ("num_bots", "num_persons", "monthly_runs"):
+            if _nc in df.columns:
+                df[_nc] = pd.to_numeric(df[_nc], errors="coerce").fillna(0).astype(int)
+        for _fc in ("manual_run_mins", "bot_run_mins"):
+            if _fc in df.columns:
+                df[_fc] = pd.to_numeric(df[_fc], errors="coerce").fillna(0.0).astype(float)
+        # Normalize Arrow-backed string columns to plain object dtype to prevent
+        # TypeError when assigning int/float values on newer pandas+pyarrow builds.
+        for _sc in df.columns:
+            try:
+                if hasattr(df[_sc], "dtype") and "string" in str(df[_sc].dtype).lower():
+                    df[_sc] = df[_sc].astype(object)
+            except Exception:
+                pass
         return df
     return pd.DataFrame(columns=PROJECT_COLS)
 
@@ -5844,10 +5858,10 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                                 st.session_state.projects["name"] == _trk_sel
                             ].index
                             if not _trb_pi.empty:
-                                st.session_state.projects.loc[_trb_pi, "num_persons"]     = _trb_inp_np
-                                st.session_state.projects.loc[_trb_pi, "num_bots"]        = _trb_inp_nb
-                                st.session_state.projects.loc[_trb_pi, "manual_run_mins"] = _trb_inp_mr
-                                st.session_state.projects.loc[_trb_pi, "bot_run_mins"]    = _trb_inp_br
+                                st.session_state.projects.loc[_trb_pi, "num_persons"]     = str(_trb_inp_np)
+                                st.session_state.projects.loc[_trb_pi, "num_bots"]        = str(_trb_inp_nb)
+                                st.session_state.projects.loc[_trb_pi, "manual_run_mins"] = str(_trb_inp_mr)
+                                st.session_state.projects.loc[_trb_pi, "bot_run_mins"]    = str(_trb_inp_br)
                                 save_projects_async(st.session_state.projects)
                                 auth.log_audit(cu["id"], cu["name"], "UPDATE", "projects",
                                                str(_trk_pid),
