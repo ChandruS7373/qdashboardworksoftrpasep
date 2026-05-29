@@ -5844,10 +5844,10 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                                 st.session_state.projects["name"] == _trk_sel
                             ].index
                             if not _trb_pi.empty:
-                                st.session_state.projects.loc[_trb_pi, "num_persons"]     = str(_trb_inp_np)
-                                st.session_state.projects.loc[_trb_pi, "num_bots"]        = str(_trb_inp_nb)
-                                st.session_state.projects.loc[_trb_pi, "manual_run_mins"] = str(_trb_inp_mr)
-                                st.session_state.projects.loc[_trb_pi, "bot_run_mins"]    = str(_trb_inp_br)
+                                st.session_state.projects.loc[_trb_pi, "num_persons"]     = _trb_inp_np
+                                st.session_state.projects.loc[_trb_pi, "num_bots"]        = _trb_inp_nb
+                                st.session_state.projects.loc[_trb_pi, "manual_run_mins"] = _trb_inp_mr
+                                st.session_state.projects.loc[_trb_pi, "bot_run_mins"]    = _trb_inp_br
                                 save_projects_async(st.session_state.projects)
                                 auth.log_audit(cu["id"], cu["name"], "UPDATE", "projects",
                                                str(_trk_pid),
