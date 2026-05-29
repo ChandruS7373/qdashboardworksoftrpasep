@@ -279,6 +279,7 @@ _PROJECT_COLS = [
     "ckpt_pdd_sdd_start","ckpt_pdd_sdd_end","ckpt_development_start","ckpt_development_end",
     "ckpt_uat_start","ckpt_uat_end","ckpt_deployment_start","ckpt_deployment_end",
     "allocated_hours","project_lead_email",
+    "num_bots","num_persons","manual_run_mins","bot_run_mins","monthly_runs",
 ]
 
 
