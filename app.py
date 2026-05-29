@@ -1651,7 +1651,7 @@ if role == "employee":
     _tab_defs = [("tasks", "My Tasks"), ("projects", "Projects")]
 elif role == "sales":
     _tab_defs = [("dashboard", "Dashboard"), ("presales", "Presales/POC")]
-elif role in ("lead", "manager"):
+elif role in ("lead", "manager", "project_lead"):
     _tab_defs = [("dashboard", "Dashboard"), ("projects", "Projects"),
                  ("presales", "Presales/POC"), ("license", "License"),
                  ("agent", "AI Agent"), ("tasks", "Tasks")]
@@ -1738,7 +1738,7 @@ for _i, (_tid, _tlabel) in enumerate(_tab_defs):
         st.session_state.active_tab = _tid
         st.rerun()
 
-if role in ("admin", "lead", "manager"):
+if role in ("admin", "lead", "manager", "project_lead"):
     if nav_c[_n].button("Refresh", use_container_width=True, key="nav_sync_admin"):
         st.session_state.projects = load_projects()
         ids = pd.to_numeric(st.session_state.projects.get("id", pd.Series([])), errors="coerce").dropna()
@@ -1777,7 +1777,7 @@ if st.session_state.get("file_panel_proj"):
 # ══════════════════════════════════════════════════════════════════════════════
 # MODAL: ADD / EDIT
 # ══════════════════════════════════════════════════════════════════════════════
-if st.session_state.show_modal is not None and role in ("admin", "lead", "manager"):
+if st.session_state.show_modal is not None and role in ("admin", "lead", "manager", "project_lead"):
     mode     = "add" if st.session_state.show_modal == "add" else "edit"
     edit_row = {} if mode == "add" else st.session_state.show_modal.get("edit", {})
 
@@ -2042,7 +2042,7 @@ if st.session_state.show_modal is not None and role in ("admin", "lead", "manage
     st.markdown("---")
 
 # ── CONFIRM DELETE ────────────────────────────────────────────────────────────
-if st.session_state.confirm_delete and role in ("admin", "lead", "manager"):
+if st.session_state.confirm_delete and role in ("admin", "lead", "manager", "project_lead"):
     cd = st.session_state.confirm_delete
     st.warning(f"Delete \"{cd['name']}\"? This cannot be undone.")
     da, db, _ = st.columns([1,1,4])
@@ -2103,8 +2103,18 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
     dash_df    = _dash_df_pre
     dash_stats = stats
 
-    _dt_rpa, _dt_ws = st.tabs(["🔧 RPA", "⚙️ Worksoft"])
-    with _dt_rpa:
+    _dash_dept  = str(cu.get("department","") or "")
+    _d_ws_only  = _dash_dept == "Worksoft" and role != "admin"
+    _d_rpa_only = _dash_dept == "RPA"      and role != "admin"
+    _d_tabs     = []
+    if not _d_ws_only:  _d_tabs.append("🔧 RPA")
+    if not _d_rpa_only: _d_tabs.append("⚙️ Worksoft")
+    _d_objs = st.tabs(_d_tabs)
+    _dti    = iter(_d_objs)
+    _dt_rpa = next(_dti) if not _d_ws_only  else None
+    _dt_ws  = next(_dti) if not _d_rpa_only else None
+    if _dt_rpa is not None:
+     with _dt_rpa:
         st.markdown(
             '<style>'
             '@keyframes fadeInUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}'
@@ -4503,7 +4513,8 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
     # TAB: PROJECTS — EMPLOYEE VIEW (assigned Worksoft projects only)
     # ══════════════════════════════════════════════════════════════════════════════
 
-    with _dt_ws:
+    if _dt_ws is not None:
+     with _dt_ws:
         # ── Worksoft data ─────────────────────────────────────────────────────────
         _wsd_df = df[df["proj_type"].fillna("").str.strip() == "Worksoft"] if not df.empty else pd.DataFrame(columns=df.columns if not df.empty else [])
         _wsd_all_hours = auth.get_all_worksoft_total_hours()
@@ -6394,8 +6405,8 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
             st.info("No projects match the current filters.")
             return
 
-        is_admin = (role in ("admin", "lead", "manager"))
-        can_edit = role in ("admin", "lead", "manager")
+        is_admin = (role in ("admin", "lead", "manager", "project_lead"))
+        can_edit = role in ("admin", "lead", "manager", "project_lead")
 
         # ── Flat column layout — every column is its own Streamlit column ──────
         # [ID, Name, Status, Client, Lead, Employee, Type, Start, End, Due, PO, (Remaining*), ✏, 🗑, 📎]
@@ -6654,7 +6665,7 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                         # ── Worksoft edit form (mirrors the create form) ──────────
                         _ie_all_users   = [u for u in auth.get_all_users() if u.get("is_active")]
                         _ie_id_to_label = {u["id"]: f"{u['name']} ({u['email']})" for u in _ie_all_users}
-                        _ie_lead_users  = [u for u in _ie_all_users if u.get("role") in ("lead", "admin", "manager")]
+                        _ie_lead_users  = [u for u in _ie_all_users if u.get("role") in ("lead", "project_lead", "admin", "manager")]
                         _ie_cur_assigns = auth.get_worksoft_project_assignments(int(float(rid)))
                         _ie_cur_uid_set = {a["user_id"] for a in _ie_cur_assigns}
                         _ie_saved_dh    = {a["user_id"]: a["daily_hours"] for a in _ie_cur_assigns}
@@ -6954,12 +6965,17 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
     _DISCONTINUED_STATUSES = {"Discontinued"}
 
     # ── Top-level department tabs: RPA | Worksoft ──────────────────────────────
-    # Worksoft-department users only see the Worksoft tab
-    _cu_dept = str(cu.get("department", "") or "")
-    _ws_only = (_cu_dept == "Worksoft") and (role not in ("admin",))
+    # Show only the tab that matches the user's department.
+    # Admins see both. RPA users see only RPA. Worksoft users see only Worksoft.
+    _cu_dept  = str(cu.get("department", "") or "")
+    _ws_only  = (_cu_dept == "Worksoft") and (role not in ("admin",))
+    _rpa_only = (_cu_dept == "RPA")      and (role not in ("admin",))
     if _ws_only:
-        _dept_tab_rpa  = None
-        _dept_tab_ws   = st.container()
+        _dept_tab_rpa = None
+        _dept_tab_ws  = st.container()
+    elif _rpa_only:
+        _dept_tab_rpa = st.container()
+        _dept_tab_ws  = None
     else:
         _dept_tab_rpa, _dept_tab_ws = st.tabs(["🔧 RPA", "⚙️ Worksoft"])
 
@@ -7035,13 +7051,25 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                     tab_key="rpa_disc", show_timesheet=False)
 
     # ── Worksoft tab ────────────────────────────────────────────────────────────
-    with _dept_tab_ws:
+    if _dept_tab_ws is not None:
+     with _dept_tab_ws:
         _ws_base = (df[df["proj_type"].fillna("").str.strip() == "Worksoft"]
                     if "proj_type" in df.columns
                     else pd.DataFrame(columns=df.columns if not df.empty else []))
 
+        # Worksoft project_lead isolation rule:
+        # A project_lead can only see projects where they are the assigned lead.
+        # Leads, managers and admins see all Worksoft projects.
+        if role == "project_lead" and not _ws_base.empty:
+            _ws_cu_name  = str(cu.get("name", "")).strip()
+            _ws_cu_email = str(cu.get("email", "")).strip()
+            _ws_base = _ws_base[
+                (_ws_base["lead"].fillna("").str.strip() == _ws_cu_name) |
+                (_ws_base["project_lead_email"].fillna("").str.strip() == _ws_cu_email)
+            ].copy()
+
         # Add Worksoft Project form
-        if role in ("admin", "lead", "manager"):
+        if role in ("admin", "lead", "project_lead", "manager"):
             with st.expander("➕ Add Worksoft Project", expanded=_ws_base.empty):
                 _wsa, _wsb = st.columns(2)
                 _ws_client  = _wsa.text_input("Client Name *", key="ws_add_client", placeholder="e.g. TEPL")
@@ -7068,7 +7096,7 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                             _dh_label, min_value=0.0, max_value=24.0, step=0.5, value=8.0,
                             key=f"ws_add_dh_{_dh_uid}",
                         )
-                _ws_lead_users = [u for u in _ws_all_active if u.get("role") in ("lead", "admin", "manager")]
+                _ws_lead_users = [u for u in _ws_all_active if u.get("role") in ("lead", "project_lead", "admin", "manager")]
                 _wsc, _wsd, _wse = st.columns(3)
                 _ws_lead_sel_id = _wsc.selectbox(
                     "Project Lead",
@@ -7290,8 +7318,8 @@ elif st.session_state.active_tab == "presales" and role not in ("employee",):
         return '<span style="font-size:10px;color:#CBD5E1">—</span>'
 
     def _render_poc_table(data, tab_key):
-        _is_adm = (role in ("admin", "lead", "manager"))
-        _can_ed = role in ("admin", "lead", "manager")
+        _is_adm = (role in ("admin", "lead", "manager", "project_lead"))
+        _can_ed = role in ("admin", "lead", "manager", "project_lead")
         _cw = [10, 0.4, 0.4] if _is_adm else ([10, 0.4] if _can_ed else [10])
         if data.empty:
             st.info("No projects found.")
@@ -8298,7 +8326,8 @@ elif st.session_state.active_tab == "users" and role == "admin":
                 _nu_email = _ub.text_input("Email Address *", key=f"nu_email_{dept_key}")
                 _uc2, _ud = st.columns(2)
                 _nu_pass  = _uc2.text_input("Password *",     type="password", key=f"nu_pass_{dept_key}")
-                _nu_role  = _ud.selectbox("Role",             auth.ROLES,      key=f"nu_role_{dept_key}")
+                _nu_role_opts = auth.ROLES if dept_label == "Worksoft" else auth.RPA_ROLES
+                _nu_role  = _ud.selectbox("Role",             _nu_role_opts,   key=f"nu_role_{dept_key}")
                 if st.button(f"Create {dept_label} User", type="primary", key=f"create_user_btn_{dept_key}"):
                     _errs = []
                     if not _nu_name.strip():                          _errs.append("Name is required.")
@@ -8321,7 +8350,7 @@ elif st.session_state.active_tab == "users" and role == "admin":
             _uhdr = st.columns([0.3, 1.6, 2.2, 1.0, 0.7, 0.45, 0.45, 0.45, 0.45])
             for _col, _lbl in zip(_uhdr, ["ID", "Name", "Email", "Role", "Active", "", "", "", ""]):
                 _col.markdown(f'<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#64748B;letter-spacing:.5px;padding:8px 4px;border-bottom:2px solid #DFE3E7;white-space:nowrap;background:#F8FAFC">{_lbl}</div>', unsafe_allow_html=True)
-            _role_colors = {"admin": "#3F8E91", "lead": "#2E7D5B", "manager": "#966D17", "employee": "#4E5860", "sales": "#5FA9AB"}
+            _role_colors = {"admin": "#3F8E91", "lead": "#2E7D5B", "manager": "#966D17", "employee": "#4E5860", "sales": "#5FA9AB", "project_lead": "#7C3AED"}
             if not _dept_users:
                 st.markdown('<div style="padding:16px;color:#94A3B8;font-size:12px;text-align:center">No users in this department yet.</div>', unsafe_allow_html=True)
             for _u in _dept_users:
@@ -8381,8 +8410,9 @@ elif st.session_state.active_tab == "users" and role == "admin":
                 _eu_name  = _ea.text_input("Full Name *",    value=_eu_rec["name"],  key="eu_name")
                 _eu_email = _eb.text_input("Email *",        value=_eu_rec["email"], key="eu_email")
                 _ec, _ed  = st.columns(2)
-                _eu_role  = _ec.selectbox("Role", auth.ROLES,
-                                          index=auth.ROLES.index(_eu_rec["role"]) if _eu_rec["role"] in auth.ROLES else 0,
+                _eu_role_opts = auth.ROLES if _eu_rec.get("department", "") == "Worksoft" else auth.RPA_ROLES
+                _eu_role  = _ec.selectbox("Role", _eu_role_opts,
+                                          index=_eu_role_opts.index(_eu_rec["role"]) if _eu_rec["role"] in _eu_role_opts else 0,
                                           key="eu_role")
                 _eu_dept_opts = ["", "RPA", "Worksoft"]
                 _eu_dept_idx  = _eu_dept_opts.index(_eu_rec.get("department", "")) if _eu_rec.get("department", "") in _eu_dept_opts else 0
@@ -9329,13 +9359,20 @@ elif st.session_state.active_tab == "tasks":
                     )
 
         def _render_task_dept_tabs():
-            _tdept_rpa, _tdept_ws, _tdept_done = st.tabs(["🔧 RPA", "⚙️ Worksoft", "✅ All Completed"])
-            with _tdept_rpa:
-                _render_all_tasks_panel("RPA")
-            with _tdept_ws:
-                _render_all_tasks_panel("Worksoft")
-            with _tdept_done:
-                _render_all_completed_cross_portal()
+            _tdept = str(cu.get("department","") or "")
+            _t_ws_only  = _tdept == "Worksoft" and role != "admin"
+            _t_rpa_only = _tdept == "RPA"      and role != "admin"
+            _t_labels = []
+            if not _t_ws_only:  _t_labels.append("🔧 RPA")
+            if not _t_rpa_only: _t_labels.append("⚙️ Worksoft")
+            _t_labels.append("✅ All Completed")
+            _t_objs = st.tabs(_t_labels)
+            _ti = iter(_t_objs)
+            if not _t_ws_only:
+                with next(_ti): _render_all_tasks_panel("RPA")
+            if not _t_rpa_only:
+                with next(_ti): _render_all_tasks_panel("Worksoft")
+            with next(_ti): _render_all_completed_cross_portal()
 
         def _render_assigned_tasks_panel():
             _at_tasks = auth.get_tasks_assigned_by(cu["id"])
@@ -9393,7 +9430,7 @@ elif st.session_state.active_tab == "tasks":
                                 unsafe_allow_html=True,
                             )
 
-        if role == "lead":
+        if role in ("lead", "project_lead"):
             _ltab_mine, _ltab_assigned, _ltab_all = st.tabs(["My Tasks", "Assigned Tasks", "All Tasks"])
             with _ltab_mine:
                 _render_my_tasks_panel(key_prefix="lt_")

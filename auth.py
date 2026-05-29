@@ -9,7 +9,8 @@ DB_PATH = os.environ.get(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "qualesce.db"),
 )
 
-ROLES = ["admin", "lead", "manager", "employee", "sales"]
+ROLES = ["admin", "lead", "manager", "employee", "sales", "project_lead"]
+RPA_ROLES = [r for r in ROLES if r != "project_lead"]
 TASK_STATUSES = ["Not Started", "In Progress", "Completed", "On Hold"]
 
 _license_extras_ready = False
@@ -401,13 +402,13 @@ def authenticate(email: str, password: str):
     conn = get_conn()
     c = conn.cursor()
     c.execute(
-        "SELECT id, name, email, password_hash, role, is_active FROM users WHERE email=?",
+        "SELECT id, name, email, password_hash, role, is_active, department FROM users WHERE email=?",
         (email.strip().lower(),),
     )
     row = c.fetchone()
     conn.close()
     if row and row[5] == 1 and verify_password(password, row[3]):
-        return {"id": row[0], "name": row[1], "email": row[2], "role": row[4]}
+        return {"id": row[0], "name": row[1], "email": row[2], "role": row[4], "department": row[6] or ""}
     return None
 
 
