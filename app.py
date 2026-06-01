@@ -353,10 +353,10 @@ def load_projects() -> pd.DataFrame:
         for col in PROJECT_COLS:
             if col not in df.columns:
                 df[col] = ""
-        for _nc in ("num_bots", "num_persons", "monthly_runs"):
+        for _nc in ("num_persons", "monthly_runs"):
             if _nc in df.columns:
                 df[_nc] = pd.to_numeric(df[_nc], errors="coerce").fillna(0).astype(int)
-        for _fc in ("manual_run_mins", "bot_run_mins"):
+        for _fc in ("manual_run_mins", "bot_run_mins", "num_bots"):
             if _fc in df.columns:
                 df[_fc] = pd.to_numeric(df[_fc], errors="coerce").fillna(0.0).astype(float)
         # Normalize Arrow-backed string columns to plain object dtype to prevent
@@ -2581,7 +2581,7 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
                     st.plotly_chart(_bm_fig, use_container_width=True)
                 with _bm_chart_right:
                     _bm_total_s = sum(_bm_saved_hrs)
-                    _bm_total_b = int(_bm_chart_src["num_bots"].sum())
+                    _bm_total_b = _bm_chart_src["num_bots"].sum()
                     st.markdown(
                         f'<div style="background:linear-gradient(135deg,#F0FDF4,#DCFCE7);border-radius:12px;'
                         f'padding:16px;border:1px solid #BBF7D0;text-align:center;margin-bottom:8px">'
@@ -2597,7 +2597,7 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
                         f'<div style="background:linear-gradient(135deg,#EFF6FF,#DBEAFE);border-radius:12px;'
                         f'padding:14px;border:1px solid #BFDBFE;text-align:center">'
                         f'<div style="font-size:10px;color:#64748B;font-weight:600;margin-bottom:4px">Active Bots</div>'
-                        f'<div style="font-size:28px;font-weight:900;color:#3B82F6">{_bm_total_b}</div>'
+                        f'<div style="font-size:28px;font-weight:900;color:#3B82F6">{_bm_total_b:,.1f}</div>'
                         f'</div>',
                         unsafe_allow_html=True
                     )
@@ -5822,7 +5822,7 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                         if _trbmc not in st.session_state.projects.columns:
                             st.session_state.projects[_trbmc] = 0
                     _trb_np = int(float(_trk_row.get("num_persons",    0) or 0))
-                    _trb_nb = int(float(_trk_row.get("num_bots",       0) or 0))
+                    _trb_nb = float(_trk_row.get("num_bots",       0) or 0)
                     _trb_mr = float(_trk_row.get("manual_run_mins", 0) or 0)
                     _trb_br = float(_trk_row.get("bot_run_mins",    0) or 0)
                     _trb_month_start = date.today().replace(day=1).isoformat()
@@ -5850,7 +5850,7 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                         )
                         _trbs1, _trbs2, _trbs3, _trbs4 = st.columns(4)
                         _trb_inp_np = _trbs1.number_input("Persons",       min_value=0,   value=_trb_np,  step=1,   key=f"trb_np_{_trk_pid}")
-                        _trb_inp_nb = _trbs2.number_input("Bots",          min_value=0,   value=_trb_nb,  step=1,   key=f"trb_nb_{_trk_pid}")
+                        _trb_inp_nb = _trbs2.number_input("Bots",          min_value=0.0, value=_trb_nb,  step=0.5, format="%.1f", key=f"trb_nb_{_trk_pid}")
                         _trb_inp_mr = _trbs3.number_input("Manual (mins)", min_value=0.0, value=_trb_mr,  step=1.0, key=f"trb_mr_{_trk_pid}")
                         _trb_inp_br = _trbs4.number_input("Bot (mins)",    min_value=0.0, value=_trb_br,  step=1.0, key=f"trb_br_{_trk_pid}")
                         if st.button("💾 Save Bot Settings", key=f"trb_save_{_trk_pid}", type="primary"):
