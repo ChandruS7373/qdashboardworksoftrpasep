@@ -475,6 +475,13 @@ def format_relative_time(ts_str: str) -> str:
         return str(ts_str)[:10]
 
 
+def _pdf_safe(text) -> str:
+    """Sanitize text so it is safe for fpdf Latin-1 (Helvetica) core fonts."""
+    import unicodedata
+    s = unicodedata.normalize("NFC", str(text))
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+
 def generate_pdf_report(df: pd.DataFrame, stats: dict, company: str = "Qualesce") -> bytes:
     """Generate a PDF project summary report. Returns bytes."""
     try:
@@ -489,7 +496,7 @@ def generate_pdf_report(df: pd.DataFrame, stats: dict, company: str = "Qualesce"
     # Header
     pdf.set_font("Helvetica", "B", 20)
     pdf.set_text_color(31, 59, 77)
-    pdf.cell(0, 12, f"{company} - Project Portfolio Report", ln=True)
+    pdf.cell(0, 12, _pdf_safe(f"{company} - Project Portfolio Report"), ln=True)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(100, 116, 139)
     pdf.cell(0, 6, f"Generated: {datetime.now().strftime('%d %b %Y %H:%M')}", ln=True)
@@ -511,8 +518,8 @@ def generate_pdf_report(df: pd.DataFrame, stats: dict, company: str = "Qualesce"
         ("Total Cost Saved", f"Rs {stats.get('total_cost', 0):,.0f}"),
     ]
     for label, value in kpis:
-        pdf.cell(70, 7, f"  {label}:", 0)
-        pdf.cell(0, 7, str(value), ln=True)
+        pdf.cell(70, 7, _pdf_safe(f"  {label}:"), 0)
+        pdf.cell(0, 7, _pdf_safe(str(value)), ln=True)
     pdf.ln(4)
 
     # Projects table
@@ -525,7 +532,7 @@ def generate_pdf_report(df: pd.DataFrame, stats: dict, company: str = "Qualesce"
     headers = ["#", "Project", "Client", "Status", "ROI%"]
     widths = [8, 72, 50, 28, 22]
     for h, w in zip(headers, widths):
-        pdf.cell(w, 7, h, border=1, fill=True)
+        pdf.cell(w, 7, _pdf_safe(h), border=1, fill=True)
     pdf.ln()
 
     pdf.set_font("Helvetica", "", 8)
@@ -535,11 +542,11 @@ def generate_pdf_report(df: pd.DataFrame, stats: dict, company: str = "Qualesce"
         fill = i % 2 == 1
         if fill:
             pdf.set_fill_color(248, 250, 252)
-        pdf.cell(8,  6, str(row.get("id", "")), border=1, fill=fill)
-        pdf.cell(72, 6, str(row.get("name", ""))[:45], border=1, fill=fill)
-        pdf.cell(50, 6, str(row.get("client", ""))[:28], border=1, fill=fill)
-        pdf.cell(28, 6, str(row.get("status", ""))[:16], border=1, fill=fill)
-        pdf.cell(22, 6, str(row.get("roi_pct", ""))[:8], border=1, fill=fill)
+        pdf.cell(8,  6, _pdf_safe(row.get("id", "")), border=1, fill=fill)
+        pdf.cell(72, 6, _pdf_safe(str(row.get("name", ""))[:45]), border=1, fill=fill)
+        pdf.cell(50, 6, _pdf_safe(str(row.get("client", ""))[:28]), border=1, fill=fill)
+        pdf.cell(28, 6, _pdf_safe(str(row.get("status", ""))[:16]), border=1, fill=fill)
+        pdf.cell(22, 6, _pdf_safe(str(row.get("roi_pct", ""))[:8]), border=1, fill=fill)
         pdf.ln()
 
     return bytes(pdf.output())
