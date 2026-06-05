@@ -252,17 +252,38 @@ def init_db():
     except Exception:
         pass
     try:
+        c.execute("ALTER TABLE projects ADD COLUMN run_interval_value REAL DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE projects ADD COLUMN run_interval_unit TEXT DEFAULT 'Minutes'")
+        conn.commit()
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE projects ADD COLUMN run_frequency TEXT DEFAULT 'Daily'")
+        conn.commit()
+    except Exception:
+        pass
+    try:
         c.execute("""
             CREATE TABLE IF NOT EXISTS bot_metric_logs (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id   INTEGER NOT NULL,
-                project_name TEXT    DEFAULT '',
-                log_date     TEXT    NOT NULL,
-                qty          INTEGER DEFAULT 0,
-                created_at   TEXT    DEFAULT '',
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id        INTEGER NOT NULL,
+                project_name      TEXT    DEFAULT '',
+                log_date          TEXT    NOT NULL,
+                qty               INTEGER DEFAULT 0,
+                run_interval_mins REAL    DEFAULT 0,
+                created_at        TEXT    DEFAULT '',
                 UNIQUE(project_id, log_date)
             )
         """)
+        conn.commit()
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE bot_metric_logs ADD COLUMN run_interval_mins REAL DEFAULT 0")
         conn.commit()
     except Exception:
         pass
@@ -280,6 +301,7 @@ _PROJECT_COLS = [
     "ckpt_uat_start","ckpt_uat_end","ckpt_deployment_start","ckpt_deployment_end",
     "allocated_hours","project_lead_email",
     "num_bots","num_persons","manual_run_mins","bot_run_mins","monthly_runs",
+    "run_interval_value","run_interval_unit","run_frequency",
 ]
 
 
@@ -352,6 +374,11 @@ def upsert_projects(records: list):
         vals = [pid] + [str(r.get(col, "") or "") for col in _PROJECT_COLS[1:]]
         vals[_PROJECT_COLS.index("is_new")] = 1 if r.get("is_new") else 0
         vals[_PROJECT_COLS.index("is_active")] = 1 if r.get("is_active", True) else 0
+        # preserve numeric type for run_interval_value so SQLite stores it as REAL
+        try:
+            vals[_PROJECT_COLS.index("run_interval_value")] = float(r.get("run_interval_value") or 0)
+        except (ValueError, TypeError):
+            vals[_PROJECT_COLS.index("run_interval_value")] = 0.0
         rows_to_save.append(vals)
     if not rows_to_save:
         conn.close()

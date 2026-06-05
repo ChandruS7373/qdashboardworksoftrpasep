@@ -675,11 +675,22 @@ elif active == "projects":
                         _ms  = date.today().replace(day=1).isoformat()
                         _me  = date.today().isoformat()
                         _cur = auth.get_bot_metric_logs(project_id=_pid, start_date=_ms, end_date=_me)
-                        _mq  = sum(int(l.get("qty",0) or 0) for l in _cur)
-                        _svd = max(float(_mr2)*float(_np2) - float(_br2)*float(_nb), 0)*_mq/60 if (_mr2 or _br2) else 0
-                        _bk1,_bk2,_bk3,_bk4 = st.columns(4)
+                        _mq   = sum(int(l.get("qty",0) or 0) for l in _cur)
+                        _svd  = max(float(_mr2)*float(_np2) - float(_br2)*float(_nb), 0)*_mq/60 if (_mr2 or _br2) else 0
+                        _riv  = float(_pr.get("run_interval_value", 0) or 0)
+                        _riu  = str(_pr.get("run_interval_unit", "Minutes") or "Minutes")
+                        _rif  = str(_pr.get("run_frequency", "Daily") or "Daily")
+                        _rim  = _riv * 60 if _riu == "Hours" else _riv
+                        # actual run time = logged qty × interval (runs every X mins)
+                        _mo_run_time = _mq * _rim / 60
+                        # projected monthly runs = active hrs × 60 / interval
+                        _freq_hrs = {"Daily": 176, "Weekly": 160, "Monthly": 8}.get(_rif, 176)
+                        _est_mo_runs = int(_freq_hrs * 60 / _rim) if _rim > 0 else 0
+                        _bk1,_bk2,_bk3,_bk4,_bk5,_bk6 = st.columns(6)
                         _bk1.metric("Bots",_nb); _bk2.metric("Persons",_np2)
-                        _bk3.metric("Month Qty",_mq); _bk4.metric("Hrs Saved",f"{_svd:.1f}")
+                        _bk3.metric("Month Qty",_mq); _bk4.metric("Est. Mo. Runs",_est_mo_runs)
+                        _bk5.metric("Hrs Saved",f"{_svd:.1f}")
+                        _bk6.metric("Mo. Run Time (hrs)", f"{_mo_run_time:.1f}")
 
                         # ── Log Daily Quantity ────────────────────────────────
                         st.markdown(
@@ -707,18 +718,29 @@ elif active == "projects":
                                 "type": "success",
                             }
                             st.rerun()
+                        # live calculation preview
+                        if _rim > 0:
+                            _prev_mins = _bm_log_qty * _rim
+                            st.markdown(
+                                f'<div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;'
+                                f'padding:8px 12px;margin-top:6px;font-size:11px;color:#0369A1">'
+                                f'<b>This entry:</b> {_bm_log_qty} runs × {_riv} {_riu.lower()} = '
+                                f'<b>{_prev_mins:.0f} mins ({_prev_mins/60:.2f} hrs)</b> &nbsp;|&nbsp; '
+                                f'<b>Est. Mo. Runs:</b> {_est_mo_runs:,} &nbsp;|&nbsp; '
+                                f'<b>Freq:</b> {_rif}'
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
 
                         # ── Recent log entries ────────────────────────────────
                         _bm_all_logs = auth.get_bot_metric_logs(project_id=_pid)
                         if _bm_all_logs:
-                            st.markdown(
-                                '<div style="font-size:10px;font-weight:700;color:#1F3B4D;margin:10px 0 4px">'
-                                '📋 Recent Logs</div>',
-                                unsafe_allow_html=True,
-                            )
-                            _bm_log_df = pd.DataFrame(_bm_all_logs[:15])[["log_date", "qty"]].copy()
-                            _bm_log_df.columns = ["Date", "Qty"]
-                            st.dataframe(_bm_log_df, use_container_width=True, hide_index=True)
+                            with st.expander(f"📋 Log History ({len(_bm_all_logs)} entries)", expanded=False):
+                                _bm_log_df = pd.DataFrame(_bm_all_logs[:15])[["log_date", "qty"]].copy()
+                                _bm_log_df["run_time_mins"] = (_bm_log_df["qty"] * _rim).round(1)
+                                _bm_log_df["est_mo_runs"]   = _est_mo_runs
+                                _bm_log_df.columns = ["Date", "Qty", "Run Time (mins)", "Est. Mo. Runs"]
+                                st.dataframe(_bm_log_df, use_container_width=True, hide_index=True)
 
                     # Worksoft-specific: hours budget
                     if portal == "Worksoft" and _pid:

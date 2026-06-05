@@ -123,7 +123,8 @@ PROJECT_COLS = ["id","name","client","lead","employee","status","proj_type","sta
                "ckpt_development_start","ckpt_development_end",
                "ckpt_uat_start","ckpt_uat_end",
                "ckpt_deployment_start","ckpt_deployment_end",
-               "num_bots","manual_run_mins","bot_run_mins","monthly_runs","num_persons"]
+               "num_bots","manual_run_mins","bot_run_mins","monthly_runs","num_persons",
+               "run_interval_value","run_interval_unit","run_frequency"]
 EXCEL_COLS = PROJECT_COLS  # alias kept for the Excel download export
 
 PORTAL_URL = "https://q-dashboard.streamlit.app/"
@@ -326,7 +327,9 @@ def save_projects(df: pd.DataFrame) -> bool:
         auth.upsert_projects(df.to_dict("records"))
         load_projects.clear()  # Bust cache so next load_projects() call is fresh
         return True
-    except Exception:
+    except Exception as _sp_err:
+        import traceback
+        print(f"[save_projects ERROR] {_sp_err}\n{traceback.format_exc()}")
         return False
 
 
@@ -356,9 +359,12 @@ def load_projects() -> pd.DataFrame:
         for _nc in ("num_persons", "monthly_runs"):
             if _nc in df.columns:
                 df[_nc] = pd.to_numeric(df[_nc], errors="coerce").fillna(0).astype(int)
-        for _fc in ("manual_run_mins", "bot_run_mins", "num_bots"):
+        for _fc in ("manual_run_mins", "bot_run_mins", "num_bots", "run_interval_value"):
             if _fc in df.columns:
                 df[_fc] = pd.to_numeric(df[_fc], errors="coerce").fillna(0.0).astype(float)
+        for _sc, _sv in (("run_interval_unit", "Minutes"), ("run_frequency", "Daily")):
+            if _sc in df.columns:
+                df[_sc] = df[_sc].fillna(_sv).replace("", _sv)
         # Normalize Arrow-backed string columns to plain object dtype to prevent
         # TypeError when assigning int/float values on newer pandas+pyarrow builds.
         for _sc in df.columns:
@@ -2297,6 +2303,15 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
                          else f"₹{int(_mi_cost/1000):,}K" if _mi_cost >= 1000
                          else "—")
         _mi_hrs_disp  = f"{int(_mi_hrs):,}" if _mi_hrs > 0 else "—"
+        # Monthly bot run time from logged entries
+        _mi_mo_start = date.today().replace(day=1).isoformat()
+        _mi_mo_end   = date.today().isoformat()
+        _mi_mo_logs  = auth.get_bot_metric_logs(start_date=_mi_mo_start, end_date=_mi_mo_end)
+        _mi_mo_run_hrs = sum(
+            int(l.get("qty", 0) or 0) * float(l.get("run_interval_mins", 0) or 0)
+            for l in _mi_mo_logs
+        ) / 60
+        _mi_mo_run_disp = f"{_mi_mo_run_hrs:,.1f}" if _mi_mo_run_hrs > 0 else "—"
 
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#162C3B 0%,#1F3B4D 100%);'
@@ -2327,10 +2342,37 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
             f'<div style="font-size:28px;font-weight:900;color:#EC4899;line-height:1">{_mi_clients}</div>'
             f'<div style="font-size:10px;color:#94A3B8;margin-top:2px">Clients Served</div>'
             f'</div>'
+            f'<div style="text-align:center">'
+            f'<div style="font-size:28px;font-weight:900;color:#06B6D4;line-height:1">{_mi_mo_run_disp}</div>'
+            f'<div style="font-size:10px;color:#94A3B8;margin-top:2px">Bot Run Hrs (Mo.)</div>'
+            f'</div>'
             f'</div>'
             f'</div>',
             unsafe_allow_html=True
         )
+
+        # ── BOT OPERATIONS — monthly run time breakdown per RPA project ───────────
+        if _mi_mo_logs:
+            with st.container(border=True):
+                st.markdown(
+                    '<div style="font-size:9px;color:#94A3B8;font-weight:600;'
+                    'text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">'
+                    '⏱️ Bot Operations — This Month\'s Run Time by Project</div>',
+                    unsafe_allow_html=True
+                )
+                _bop_df = pd.DataFrame(_mi_mo_logs)
+                _bop_df["qty"] = pd.to_numeric(_bop_df["qty"], errors="coerce").fillna(0).astype(int)
+                _bop_df["run_interval_mins"] = pd.to_numeric(_bop_df["run_interval_mins"], errors="coerce").fillna(0)
+                _bop_df["run_hrs"] = (_bop_df["qty"] * _bop_df["run_interval_mins"] / 60).round(2)
+                _bop_summary = (
+                    _bop_df.groupby("project_name")
+                    .agg(total_qty=("qty", "sum"), total_run_hrs=("run_hrs", "sum"))
+                    .reset_index()
+                    .sort_values("total_run_hrs", ascending=False)
+                )
+                _bop_summary.columns = ["Project", "Total Qty (Mo.)", "Total Run Time (hrs)"]
+                _bop_summary["Total Run Time (hrs)"] = _bop_summary["Total Run Time (hrs)"].round(2)
+                st.dataframe(_bop_summary, use_container_width=True, hide_index=True)
 
         _sm_col1, _sm_col2 = st.columns(2)
 
@@ -2550,16 +2592,27 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
                     _bm_dash_qty[_dpid] = _bm_dash_qty.get(_dpid, 0) + int(_dl.get("qty", 0) or 0)
 
                 # Build per-project values
-                _bm_proj_names, _bm_manual_hrs, _bm_bot_hrs, _bm_saved_hrs = [], [], [], []
+                _bm_proj_names, _bm_manual_hrs, _bm_bot_hrs, _bm_saved_hrs, _bm_run_hrs, _bm_est_runs = [], [], [], [], [], []
                 for _, _pr in _bm_chart_src.iterrows():
                     _dpid  = int(float(_pr.get("id", 0) or 0))
                     _qty   = _bm_dash_qty.get(_dpid, 0)
                     _mh    = float(_pr.get("manual_run_mins", 0) or 0) * float(_pr.get("num_persons", 0) or 0) * _qty / 60
                     _bh    = float(_pr.get("bot_run_mins",    0) or 0) * float(_pr.get("num_bots",    0) or 0) * _qty / 60
+                    _p_riv = float(_pr.get("run_interval_value", 0) or 0)
+                    _p_riu = str(_pr.get("run_interval_unit", "Minutes") or "Minutes")
+                    _p_rif = str(_pr.get("run_frequency", "Daily") or "Daily")
+                    _p_rim = _p_riv * 60 if _p_riu == "Hours" else _p_riv
+                    # actual run time = logged qty × interval (each run = 1 occurrence every X mins)
+                    _rh    = _qty * _p_rim / 60
+                    # projected monthly runs: active hrs × 60 / interval
+                    _p_freq_hrs = {"Daily": 176, "Weekly": 160, "Monthly": 8}.get(_p_rif, 176)
+                    _p_est_runs = int(_p_freq_hrs * 60 / _p_rim) if _p_rim > 0 else 0
                     _bm_proj_names.append(str(_pr.get("name", "")))
                     _bm_manual_hrs.append(round(_mh, 2))
                     _bm_bot_hrs.append(round(_bh, 2))
                     _bm_saved_hrs.append(round(max(_mh - _bh, 0), 2))
+                    _bm_run_hrs.append(round(_rh, 2))
+                    _bm_est_runs.append(_p_est_runs)
 
                 _bm_chart_left, _bm_chart_right = st.columns([3, 1])
                 with _bm_chart_left:
@@ -2576,6 +2629,12 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
                         text=[f"{v:.1f}h" for v in _bm_bot_hrs],
                         textposition="outside", textfont=dict(size=9)
                     ))
+                    _bm_fig.add_trace(go.Bar(
+                        name="Actual Run Time", x=_bm_proj_names, y=_bm_run_hrs,
+                        marker_color="#06B6D4", opacity=0.85,
+                        text=[f"{v:.1f}h" for v in _bm_run_hrs],
+                        textposition="outside", textfont=dict(size=9)
+                    ))
                     _bm_fig.update_layout(
                         barmode="group", height=260,
                         margin=dict(t=30, b=0, l=0, r=0),
@@ -2587,8 +2646,10 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
                     )
                     st.plotly_chart(_bm_fig, use_container_width=True)
                 with _bm_chart_right:
-                    _bm_total_s = sum(_bm_saved_hrs)
-                    _bm_total_b = _bm_chart_src["num_bots"].sum()
+                    _bm_total_s    = sum(_bm_saved_hrs)
+                    _bm_total_b    = _bm_chart_src["num_bots"].sum()
+                    _bm_total_rh   = sum(_bm_run_hrs)
+                    _bm_total_est  = sum(_bm_est_runs)
                     st.markdown(
                         f'<div style="background:linear-gradient(135deg,#F0FDF4,#DCFCE7);border-radius:12px;'
                         f'padding:16px;border:1px solid #BBF7D0;text-align:center;margin-bottom:8px">'
@@ -2601,6 +2662,24 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
                         unsafe_allow_html=True
                     )
                     st.markdown(
+                        f'<div style="background:linear-gradient(135deg,#ECFEFF,#CFFAFE);border-radius:12px;'
+                        f'padding:14px;border:1px solid #A5F3FC;text-align:center;margin-bottom:8px">'
+                        f'<div style="font-size:10px;color:#64748B;font-weight:600;margin-bottom:4px">Actual Run Time</div>'
+                        f'<div style="font-size:28px;font-weight:900;color:#06B6D4">{_bm_total_rh:,.1f}</div>'
+                        f'<div style="font-size:10px;color:#94A3B8">hours (logged)</div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        f'<div style="background:linear-gradient(135deg,#FFF7ED,#FFEDD5);border-radius:12px;'
+                        f'padding:14px;border:1px solid #FED7AA;text-align:center;margin-bottom:8px">'
+                        f'<div style="font-size:10px;color:#64748B;font-weight:600;margin-bottom:4px">Est. Mo. Runs</div>'
+                        f'<div style="font-size:28px;font-weight:900;color:#F97316">{_bm_total_est:,}</div>'
+                        f'<div style="font-size:10px;color:#94A3B8">projected</div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
                         f'<div style="background:linear-gradient(135deg,#EFF6FF,#DBEAFE);border-radius:12px;'
                         f'padding:14px;border:1px solid #BFDBFE;text-align:center">'
                         f'<div style="font-size:10px;color:#64748B;font-weight:600;margin-bottom:4px">Active Bots</div>'
@@ -2608,6 +2687,26 @@ if st.session_state.active_tab == "dashboard" and role not in ("employee",):
                         f'</div>',
                         unsafe_allow_html=True
                     )
+
+                # ── Per-project summary table ─────────────────────────────────
+                _bm_sum_df = pd.DataFrame({
+                    "Project":          _bm_proj_names,
+                    "Frequency":        [
+                        str(_bm_chart_src.iloc[i].get("run_frequency", "—") or "—")
+                        for i in range(len(_bm_proj_names))
+                    ],
+                    "Runs Every":       [
+                        (f"{_bm_chart_src.iloc[i].get('run_interval_value', 0) or 0} "
+                         f"{_bm_chart_src.iloc[i].get('run_interval_unit', 'mins') or 'mins'}")
+                        for i in range(len(_bm_proj_names))
+                    ],
+                    "Est. Mo. Runs":    _bm_est_runs,
+                    "Actual Qty (Mo.)": [_bm_dash_qty.get(int(float(_bm_chart_src.iloc[i].get("id",0) or 0)), 0) for i in range(len(_bm_proj_names))],
+                    "Run Time (hrs)":   _bm_run_hrs,
+                    "Hrs Saved":        _bm_saved_hrs,
+                })
+                st.dataframe(_bm_sum_df, use_container_width=True, hide_index=True)
+
             st.markdown("<br>", unsafe_allow_html=True)
 
         # ── PROJECT TYPE BREAKDOWN ────────────────────────────────────────────────
@@ -5825,13 +5924,26 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                         unsafe_allow_html=True
                     )
                     # ensure columns
-                    for _trbmc in ["num_bots", "manual_run_mins", "bot_run_mins", "num_persons"]:
+                    for _trbmc in ["num_bots", "manual_run_mins", "bot_run_mins", "num_persons",
+                                   "run_interval_value", "run_interval_unit", "run_frequency"]:
                         if _trbmc not in st.session_state.projects.columns:
-                            st.session_state.projects[_trbmc] = 0
-                    _trb_np = int(float(_trk_row.get("num_persons",    0) or 0))
-                    _trb_nb = float(_trk_row.get("num_bots",       0) or 0)
-                    _trb_mr = float(_trk_row.get("manual_run_mins", 0) or 0)
-                    _trb_br = float(_trk_row.get("bot_run_mins",    0) or 0)
+                            st.session_state.projects[_trbmc] = (
+                                0 if _trbmc in ("num_bots","manual_run_mins","bot_run_mins",
+                                                "num_persons","run_interval_value") else ""
+                            )
+                    _trb_np  = int(float(_trk_row.get("num_persons",    0) or 0))
+                    _trb_nb  = float(_trk_row.get("num_bots",       0) or 0)
+                    _trb_mr  = float(_trk_row.get("manual_run_mins", 0) or 0)
+                    _trb_br  = float(_trk_row.get("bot_run_mins",    0) or 0)
+                    _trb_riv = float(_trk_row.get("run_interval_value", 0) or 0)
+                    _trb_riu = str(_trk_row.get("run_interval_unit", "Minutes") or "Minutes")
+                    _trb_rif = str(_trk_row.get("run_frequency", "Daily") or "Daily")
+                    # interval in minutes — "runs every X mins/hrs"
+                    _trb_rim = _trb_riv * 60 if _trb_riu == "Hours" else _trb_riv
+                    # working hours per month the bot is active, by frequency
+                    _trb_freq_hrs = {"Daily": 176, "Weekly": 160, "Monthly": 8}.get(_trb_rif, 176)
+                    # estimated monthly runs = total active minutes / interval
+                    _trb_est_mo_runs = int(_trb_freq_hrs * 60 / _trb_rim) if _trb_rim > 0 else 0
                     _trb_month_start = date.today().replace(day=1).isoformat()
                     _trb_month_end   = date.today().isoformat()
                     _trb_logs_all = auth.get_bot_metric_logs(project_id=_trk_pid)
@@ -5843,12 +5955,16 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                     _trb_saved = max(
                         float(_trb_mr) * float(_trb_np) - float(_trb_br) * float(_trb_nb), 0
                     ) * _trb_month_qty / 60
+                    # actual monthly run time = logged qty × interval (runs every X mins)
+                    _trb_mo_run_time = _trb_month_qty * _trb_rim / 60
                     # KPI row
-                    _trb_k1, _trb_k2, _trb_k3, _trb_k4 = st.columns(4)
-                    _trb_k1.metric("Bots",           _trb_nb)
-                    _trb_k2.metric("Persons (Manual)", _trb_np)
-                    _trb_k3.metric("Month Qty",       _trb_month_qty)
-                    _trb_k4.metric("Hrs Saved (Mo.)", f"{_trb_saved:.1f}")
+                    _trb_k1, _trb_k2, _trb_k3, _trb_k4, _trb_k5, _trb_k6 = st.columns(6)
+                    _trb_k1.metric("Bots",                _trb_nb)
+                    _trb_k2.metric("Persons (Manual)",    _trb_np)
+                    _trb_k3.metric("Month Qty (Actual)",  _trb_month_qty)
+                    _trb_k4.metric("Est. Mo. Runs",       _trb_est_mo_runs)
+                    _trb_k5.metric("Hrs Saved (Mo.)",     f"{_trb_saved:.1f}")
+                    _trb_k6.metric("Mo. Run Time (hrs)",  f"{_trb_mo_run_time:.1f}")
                     if role in ("admin", "lead", "manager"):
                         st.markdown(
                             '<div style="font-size:10px;font-weight:700;color:#1F3B4D;margin:10px 0 4px">'
@@ -5860,27 +5976,43 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                         _trb_inp_nb = _trbs2.number_input("Bots",          min_value=0.0, value=_trb_nb,  step=0.5, format="%.1f", key=f"trb_nb_{_trk_pid}")
                         _trb_inp_mr = _trbs3.number_input("Manual (mins)", min_value=0.0, value=_trb_mr,  step=1.0, key=f"trb_mr_{_trk_pid}")
                         _trb_inp_br = _trbs4.number_input("Bot (mins)",    min_value=0.0, value=_trb_br,  step=1.0, key=f"trb_br_{_trk_pid}")
+                        _trbs5, _trbs6, _trbs7, _ = st.columns(4)
+                        _trb_inp_riv = _trbs5.number_input("Runs Every", min_value=0.0, value=_trb_riv, step=1.0, key=f"trb_riv_{_trk_pid}")
+                        _trb_inp_riu = _trbs6.selectbox("Unit", ["Minutes", "Hours"],
+                                                         index=["Minutes","Hours"].index(_trb_riu) if _trb_riu in ["Minutes","Hours"] else 0,
+                                                         key=f"trb_riu_{_trk_pid}")
+                        _trb_inp_rif = _trbs7.selectbox("Frequency", ["Daily", "Weekly", "Monthly"],
+                                                         index=["Daily","Weekly","Monthly"].index(_trb_rif) if _trb_rif in ["Daily","Weekly","Monthly"] else 0,
+                                                         key=f"trb_rif_{_trk_pid}")
                         if st.button("💾 Save Bot Settings", key=f"trb_save_{_trk_pid}", type="primary"):
                             _trb_pi = st.session_state.projects[
                                 st.session_state.projects["name"] == _trk_sel
                             ].index
                             if not _trb_pi.empty:
-                                # Cast these columns to object dtype so Arrow-backed string columns
-                                # accept int/float values without TypeError on Python 3.14 + pandas
-                                for _bm_col in ["num_persons", "num_bots", "manual_run_mins", "bot_run_mins"]:
+                                for _bm_col in ["num_persons", "num_bots", "manual_run_mins",
+                                                "bot_run_mins", "run_interval_value",
+                                                "run_interval_unit", "run_frequency"]:
                                     if _bm_col in st.session_state.projects.columns:
                                         st.session_state.projects[_bm_col] = (
                                             st.session_state.projects[_bm_col].astype(object)
                                         )
-                                st.session_state.projects.loc[_trb_pi, "num_persons"]     = _trb_inp_np
-                                st.session_state.projects.loc[_trb_pi, "num_bots"]        = _trb_inp_nb
-                                st.session_state.projects.loc[_trb_pi, "manual_run_mins"] = _trb_inp_mr
-                                st.session_state.projects.loc[_trb_pi, "bot_run_mins"]    = _trb_inp_br
-                                save_projects_async(st.session_state.projects)
+                                st.session_state.projects.loc[_trb_pi, "num_persons"]        = _trb_inp_np
+                                st.session_state.projects.loc[_trb_pi, "num_bots"]           = _trb_inp_nb
+                                st.session_state.projects.loc[_trb_pi, "manual_run_mins"]    = _trb_inp_mr
+                                st.session_state.projects.loc[_trb_pi, "bot_run_mins"]       = _trb_inp_br
+                                st.session_state.projects.loc[_trb_pi, "run_interval_value"] = _trb_inp_riv
+                                st.session_state.projects.loc[_trb_pi, "run_interval_unit"]  = _trb_inp_riu
+                                st.session_state.projects.loc[_trb_pi, "run_frequency"]      = _trb_inp_rif
+                                # synchronous save — guarantees DB write completes before rerun
+                                _bm_saved_ok = save_projects(st.session_state.projects)
+                                load_projects.clear()   # flush cache so next load reads fresh DB
                                 auth.log_audit(cu["id"], cu["name"], "UPDATE", "projects",
                                                str(_trk_pid),
                                                f'Bot settings updated for "{_trk_sel}"')
-                                st.session_state.toast = {"msg": "Bot settings saved!", "type": "success"}
+                                if _bm_saved_ok:
+                                    st.session_state.toast = {"msg": "Bot settings saved!", "type": "success"}
+                                else:
+                                    st.session_state.toast = {"msg": "Save failed — check DB connection.", "type": "error"}
                                 st.rerun()
                         st.markdown(
                             '<div style="font-size:10px;font-weight:700;color:#1F3B4D;margin:10px 0 4px">'
@@ -5901,10 +6033,27 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                                            f'Qty {_trb_log_qty} logged for "{_trk_sel}" on {_trb_log_date}')
                             st.session_state.toast = {"msg": f"Logged {_trb_log_qty} for {_trb_log_date.strftime('%d/%m/%Y')}!", "type": "success"}
                             st.rerun()
+                        # live calculation preview
+                        if _trb_rim > 0:
+                            _prev_run_mins = _trb_log_qty * _trb_rim
+                            _prev_run_hrs  = _prev_run_mins / 60
+                            st.markdown(
+                                f'<div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;'
+                                f'padding:8px 12px;margin-top:6px;font-size:11px;color:#0369A1">'
+                                f'<b>This entry:</b> {_trb_log_qty} runs × {_trb_riv} {_trb_riu.lower()} = '
+                                f'<b>{_prev_run_mins:.0f} mins ({_prev_run_hrs:.2f} hrs)</b> &nbsp;|&nbsp; '
+                                f'<b>Est. Mo. Runs:</b> {_trb_est_mo_runs:,} &nbsp;|&nbsp; '
+                                f'<b>Freq:</b> {_trb_rif}'
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
                     if _trb_logs_all:
-                        _trb_log_df = pd.DataFrame(_trb_logs_all[:15])[["log_date", "qty"]].copy()
-                        _trb_log_df.columns = ["Date", "Qty"]
-                        st.dataframe(_trb_log_df, use_container_width=True, hide_index=True)
+                        with st.expander(f"📋 Log History ({len(_trb_logs_all)} entries)", expanded=False):
+                            _trb_log_df = pd.DataFrame(_trb_logs_all[:15])[["log_date", "qty"]].copy()
+                            _trb_log_df["run_time_mins"] = (_trb_log_df["qty"] * _trb_rim).round(1)
+                            _trb_log_df["est_mo_runs"]   = _trb_est_mo_runs
+                            _trb_log_df.columns = ["Date", "Qty", "Run Time (mins)", "Est. Mo. Runs"]
+                            st.dataframe(_trb_log_df, use_container_width=True, hide_index=True)
                     elif _trb_nb == 0:
                         st.info("Configure bot settings above to start tracking.")
 
