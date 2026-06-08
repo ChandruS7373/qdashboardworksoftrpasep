@@ -267,6 +267,11 @@ def init_db():
     except Exception:
         pass
     try:
+        c.execute("ALTER TABLE projects ADD COLUMN bot_tracking_mode TEXT DEFAULT 'Quantity Based'")
+        conn.commit()
+    except Exception:
+        pass
+    try:
         c.execute("""
             CREATE TABLE IF NOT EXISTS bot_metric_logs (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -301,7 +306,7 @@ _PROJECT_COLS = [
     "ckpt_uat_start","ckpt_uat_end","ckpt_deployment_start","ckpt_deployment_end",
     "allocated_hours","project_lead_email",
     "num_bots","num_persons","manual_run_mins","bot_run_mins","monthly_runs",
-    "run_interval_value","run_interval_unit","run_frequency",
+    "run_interval_value","run_interval_unit","run_frequency","bot_tracking_mode",
 ]
 
 

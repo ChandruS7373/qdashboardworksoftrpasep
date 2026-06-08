@@ -680,11 +680,13 @@ elif active == "projects":
                         _riv  = float(_pr.get("run_interval_value", 0) or 0)
                         _riu  = str(_pr.get("run_interval_unit", "Minutes") or "Minutes")
                         _rif  = str(_pr.get("run_frequency", "Daily") or "Daily")
+                        _btm  = str(_pr.get("bot_tracking_mode", "Quantity Based") or "Quantity Based")
                         _rim  = _riv * 60 if _riu == "Hours" else _riv
                         # actual run time = logged qty × interval (runs every X mins)
                         _mo_run_time = _mq * _rim / 60
-                        # projected monthly runs = active hrs × 60 / interval
-                        _freq_hrs = {"Daily": 176, "Weekly": 160, "Monthly": 8}.get(_rif, 176)
+                        # projected runs = active hrs × 60 / interval
+                        # Quarterly ≈ 520h (3 months × ~173h), Yearly ≈ 2080h (12 months × ~173h)
+                        _freq_hrs = {"Daily": 176, "Weekly": 160, "Monthly": 176, "Quarterly": 520, "Yearly": 2080}.get(_rif, 176)
                         _est_mo_runs = int(_freq_hrs * 60 / _rim) if _rim > 0 else 0
                         _bk1,_bk2,_bk3,_bk4,_bk5,_bk6 = st.columns(6)
                         _bk1.metric("Bots",_nb); _bk2.metric("Persons",_np2)
@@ -692,10 +694,12 @@ elif active == "projects":
                         _bk5.metric("Hrs Saved",f"{_svd:.1f}")
                         _bk6.metric("Mo. Run Time (hrs)", f"{_mo_run_time:.1f}")
 
-                        # ── Log Daily Quantity ────────────────────────────────
+                        # ── Log Daily Quantity / Time ─────────────────────────
+                        _bm_is_time_mode = (_btm == "Time Based")
+                        _bm_log_label = "📅 Log Daily Time (mins)" if _bm_is_time_mode else "📅 Log Daily Quantity"
                         st.markdown(
-                            '<div style="font-size:10px;font-weight:700;color:#1F3B4D;margin:12px 0 6px">'
-                            '📅 Log Daily Quantity</div>',
+                            f'<div style="font-size:10px;font-weight:700;color:#1F3B4D;margin:12px 0 6px">'
+                            f'{_bm_log_label}</div>',
                             unsafe_allow_html=True,
                         )
                         _bl1, _bl2, _bl3 = st.columns([2, 2, 1])
@@ -703,44 +707,131 @@ elif active == "projects":
                             "Date", value=date.today(), format="DD/MM/YYYY",
                             key=f"bm_logdate_{_pid}",
                         )
-                        _bm_log_qty = _bl2.number_input(
-                            "Quantity", min_value=0, value=0, step=1,
-                            key=f"bm_logqty_{_pid}",
-                        )
+                        if _bm_is_time_mode:
+                            _bm_log_time_mins = _bl2.number_input(
+                                "Time (mins)", min_value=0.0, value=0.0, step=1.0,
+                                key=f"bm_logtm_{_pid}",
+                            )
+                            _bm_log_qty = int(round(_bm_log_time_mins / _rim)) if _rim > 0 else 0
+                        else:
+                            _bm_log_qty = _bl2.number_input(
+                                "Quantity", min_value=0, value=0, step=1,
+                                key=f"bm_logqty_{_pid}",
+                            )
+                            _bm_log_time_mins = _bm_log_qty * _rim
                         _bl3.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
                         if _bl3.button("📥 Log", key=f"bm_log_{_pid}", use_container_width=True):
                             auth.upsert_bot_metric_log(_pid, _psel, str(_bm_log_date), _bm_log_qty)
+                            _bm_audit_detail = (
+                                f'{_bm_log_time_mins:.0f} mins logged for "{_psel}" on {_bm_log_date}'
+                                if _bm_is_time_mode else
+                                f'Qty {_bm_log_qty} logged for "{_psel}" on {_bm_log_date}'
+                            )
                             auth.log_audit(cu["id"], cu["name"], "CREATE", "bot_metric_logs",
-                                           str(_pid),
-                                           f'Qty {_bm_log_qty} logged for "{_psel}" on {_bm_log_date}')
-                            st.session_state.toast = {
-                                "msg": f"Logged {_bm_log_qty} for {_bm_log_date.strftime('%d/%m/%Y')}!",
-                                "type": "success",
-                            }
+                                           str(_pid), _bm_audit_detail)
+                            _bm_toast_msg = (
+                                f"Logged {_bm_log_time_mins:.0f} mins for {_bm_log_date.strftime('%d/%m/%Y')}!"
+                                if _bm_is_time_mode else
+                                f"Logged {_bm_log_qty} for {_bm_log_date.strftime('%d/%m/%Y')}!"
+                            )
+                            st.session_state.toast = {"msg": _bm_toast_msg, "type": "success"}
                             st.rerun()
                         # live calculation preview
                         if _rim > 0:
                             _prev_mins = _bm_log_qty * _rim
-                            st.markdown(
-                                f'<div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;'
-                                f'padding:8px 12px;margin-top:6px;font-size:11px;color:#0369A1">'
-                                f'<b>This entry:</b> {_bm_log_qty} runs × {_riv} {_riu.lower()} = '
-                                f'<b>{_prev_mins:.0f} mins ({_prev_mins/60:.2f} hrs)</b> &nbsp;|&nbsp; '
-                                f'<b>Est. Mo. Runs:</b> {_est_mo_runs:,} &nbsp;|&nbsp; '
-                                f'<b>Freq:</b> {_rif}'
-                                f'</div>',
-                                unsafe_allow_html=True
-                            )
+                            if _bm_is_time_mode:
+                                st.markdown(
+                                    f'<div style="background:#F0FFF4;border:1px solid #BBF7D0;border-radius:8px;'
+                                    f'padding:8px 12px;margin-top:6px;font-size:11px;color:#065F46">'
+                                    f'<b>This entry:</b> {_bm_log_time_mins:.0f} mins → '
+                                    f'<b>{_bm_log_qty} runs</b> &nbsp;|&nbsp; '
+                                    f'<b>Est. Mo. Runs:</b> {_est_mo_runs:,} &nbsp;|&nbsp; '
+                                    f'<b>Freq:</b> {_rif}'
+                                    f'</div>',
+                                    unsafe_allow_html=True
+                                )
+                            else:
+                                st.markdown(
+                                    f'<div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;'
+                                    f'padding:8px 12px;margin-top:6px;font-size:11px;color:#0369A1">'
+                                    f'<b>This entry:</b> {_bm_log_qty} runs × {_riv} {_riu.lower()} = '
+                                    f'<b>{_prev_mins:.0f} mins ({_prev_mins/60:.2f} hrs)</b> &nbsp;|&nbsp; '
+                                    f'<b>Est. Mo. Runs:</b> {_est_mo_runs:,} &nbsp;|&nbsp; '
+                                    f'<b>Freq:</b> {_rif}'
+                                    f'</div>',
+                                    unsafe_allow_html=True
+                                )
 
                         # ── Recent log entries ────────────────────────────────
                         _bm_all_logs = auth.get_bot_metric_logs(project_id=_pid)
                         if _bm_all_logs:
                             with st.expander(f"📋 Log History ({len(_bm_all_logs)} entries)", expanded=False):
-                                _bm_log_df = pd.DataFrame(_bm_all_logs[:15])[["log_date", "qty"]].copy()
-                                _bm_log_df["run_time_mins"] = (_bm_log_df["qty"] * _rim).round(1)
-                                _bm_log_df["est_mo_runs"]   = _est_mo_runs
-                                _bm_log_df.columns = ["Date", "Qty", "Run Time (mins)", "Est. Mo. Runs"]
-                                st.dataframe(_bm_log_df, use_container_width=True, hide_index=True)
+                                # ── Date filter ──────────────────────────────
+                                _bmf1, _bmf2 = st.columns(2)
+                                _bm_from = _bmf1.date_input("From", value=date.today().replace(day=1),
+                                                             format="DD/MM/YYYY", key=f"bm_from_{_pid}")
+                                _bm_to   = _bmf2.date_input("To",   value=date.today(),
+                                                             format="DD/MM/YYYY", key=f"bm_to_{_pid}")
+                                _bm_filtered = [
+                                    l for l in _bm_all_logs
+                                    if _bm_from.isoformat() <= str(l.get("log_date","")) <= _bm_to.isoformat()
+                                ]
+                                # ── Table ─────────────────────────────────────
+                                if _bm_filtered:
+                                    _bm_log_df = pd.DataFrame(_bm_filtered)[["log_date", "qty"]].copy()
+                                    _bm_log_df["run_time_mins"] = (_bm_log_df["qty"] * _rim).round(1)
+                                    _bm_log_df["est_mo_runs"]   = _est_mo_runs
+                                    _bm_log_df.columns = ["Date", "Qty", "Run Time (mins)", "Est. Mo. Runs"]
+                                    st.dataframe(_bm_log_df, use_container_width=True, hide_index=True)
+                                else:
+                                    st.caption("No logs in selected date range.")
+                                # ── Edit ──────────────────────────────────────
+                                if _bm_filtered:
+                                    st.markdown(
+                                        '<div style="font-size:10px;font-weight:700;color:#1F3B4D;margin:10px 0 4px">'
+                                        '✏️ Edit a Log Entry</div>',
+                                        unsafe_allow_html=True,
+                                    )
+                                    _bm_dates = [l["log_date"] for l in _bm_filtered]
+                                    _bm_sel_date = st.selectbox(
+                                        "Select date to edit", _bm_dates,
+                                        key=f"bm_sel_{_pid}"
+                                    )
+                                    _bm_sel_log = next(
+                                        (l for l in _bm_filtered if l["log_date"] == _bm_sel_date), None
+                                    )
+                                    if _bm_sel_log:
+                                        _bmea, _bmeb, _bmec = st.columns([2, 2, 1])
+                                        _bm_edit_date = _bmea.date_input(
+                                            "Date", value=date.fromisoformat(_bm_sel_date),
+                                            format="DD/MM/YYYY", key=f"bm_edate_{_pid}"
+                                        )
+                                        _bm_cur_qty = int(_bm_sel_log.get("qty", 0) or 0)
+                                        if _btm == "Time Based" and _rim > 0:
+                                            _bm_cur_mins = _bm_cur_qty * _rim
+                                            _bm_edit_mins = _bmeb.number_input(
+                                                "Time (mins)", min_value=0.0,
+                                                value=float(_bm_cur_mins), step=1.0,
+                                                key=f"bm_emins_{_pid}"
+                                            )
+                                            _bm_edit_qty = int(round(_bm_edit_mins / _rim))
+                                        else:
+                                            _bm_edit_qty = _bmeb.number_input(
+                                                "Quantity", min_value=0,
+                                                value=_bm_cur_qty, step=1,
+                                                key=f"bm_eqty_{_pid}"
+                                            )
+                                        _bmec.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+                                        if _bmec.button("💾 Save", key=f"bm_esave_{_pid}", use_container_width=True, type="primary"):
+                                            auth.upsert_bot_metric_log(
+                                                _pid, _psel,
+                                                str(_bm_edit_date), _bm_edit_qty
+                                            )
+                                            auth.log_audit(cu["id"], cu["name"], "UPDATE", "bot_metric_logs",
+                                                           str(_pid),
+                                                           f'Log edited for "{_psel}" on {_bm_edit_date}: qty={_bm_edit_qty}')
+                                            st.session_state.toast = {"msg": "Log updated!", "type": "success"}
+                                            st.rerun()
 
                     # Worksoft-specific: hours budget
                     if portal == "Worksoft" and _pid:

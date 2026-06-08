@@ -5925,7 +5925,8 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                     )
                     # ensure columns
                     for _trbmc in ["num_bots", "manual_run_mins", "bot_run_mins", "num_persons",
-                                   "run_interval_value", "run_interval_unit", "run_frequency"]:
+                                   "run_interval_value", "run_interval_unit", "run_frequency",
+                                   "bot_tracking_mode"]:
                         if _trbmc not in st.session_state.projects.columns:
                             st.session_state.projects[_trbmc] = (
                                 0 if _trbmc in ("num_bots","manual_run_mins","bot_run_mins",
@@ -5938,10 +5939,12 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                     _trb_riv = float(_trk_row.get("run_interval_value", 0) or 0)
                     _trb_riu = str(_trk_row.get("run_interval_unit", "Minutes") or "Minutes")
                     _trb_rif = str(_trk_row.get("run_frequency", "Daily") or "Daily")
+                    _trb_btm = str(_trk_row.get("bot_tracking_mode", "Quantity Based") or "Quantity Based")
                     # interval in minutes — "runs every X mins/hrs"
                     _trb_rim = _trb_riv * 60 if _trb_riu == "Hours" else _trb_riv
                     # working hours per month the bot is active, by frequency
-                    _trb_freq_hrs = {"Daily": 176, "Weekly": 160, "Monthly": 8}.get(_trb_rif, 176)
+                    # Quarterly ≈ 520h (3 months × ~173h), Yearly ≈ 2080h (12 months × ~173h)
+                    _trb_freq_hrs = {"Daily": 176, "Weekly": 160, "Monthly": 176, "Quarterly": 520, "Yearly": 2080}.get(_trb_rif, 176)
                     # estimated monthly runs = total active minutes / interval
                     _trb_est_mo_runs = int(_trb_freq_hrs * 60 / _trb_rim) if _trb_rim > 0 else 0
                     _trb_month_start = date.today().replace(day=1).isoformat()
@@ -5976,14 +5979,19 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                         _trb_inp_nb = _trbs2.number_input("Bots",          min_value=0.0, value=_trb_nb,  step=0.5, format="%.1f", key=f"trb_nb_{_trk_pid}")
                         _trb_inp_mr = _trbs3.number_input("Manual (mins)", min_value=0.0, value=_trb_mr,  step=1.0, key=f"trb_mr_{_trk_pid}")
                         _trb_inp_br = _trbs4.number_input("Bot (mins)",    min_value=0.0, value=_trb_br,  step=1.0, key=f"trb_br_{_trk_pid}")
-                        _trbs5, _trbs6, _trbs7, _ = st.columns(4)
+                        _trbs5, _trbs6, _trbs7, _trbs8 = st.columns(4)
                         _trb_inp_riv = _trbs5.number_input("Runs Every", min_value=0.0, value=_trb_riv, step=1.0, key=f"trb_riv_{_trk_pid}")
                         _trb_inp_riu = _trbs6.selectbox("Unit", ["Minutes", "Hours"],
                                                          index=["Minutes","Hours"].index(_trb_riu) if _trb_riu in ["Minutes","Hours"] else 0,
                                                          key=f"trb_riu_{_trk_pid}")
-                        _trb_inp_rif = _trbs7.selectbox("Frequency", ["Daily", "Weekly", "Monthly"],
-                                                         index=["Daily","Weekly","Monthly"].index(_trb_rif) if _trb_rif in ["Daily","Weekly","Monthly"] else 0,
+                        _trb_freq_opts = ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"]
+                        _trb_inp_rif = _trbs7.selectbox("Frequency", _trb_freq_opts,
+                                                         index=_trb_freq_opts.index(_trb_rif) if _trb_rif in _trb_freq_opts else 0,
                                                          key=f"trb_rif_{_trk_pid}")
+                        _trb_mode_opts = ["Quantity Based", "Time Based"]
+                        _trb_inp_btm = _trbs8.selectbox("Tracking Mode", _trb_mode_opts,
+                                                          index=_trb_mode_opts.index(_trb_btm) if _trb_btm in _trb_mode_opts else 0,
+                                                          key=f"trb_btm_{_trk_pid}")
                         if st.button("💾 Save Bot Settings", key=f"trb_save_{_trk_pid}", type="primary"):
                             _trb_pi = st.session_state.projects[
                                 st.session_state.projects["name"] == _trk_sel
@@ -5991,7 +5999,8 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                             if not _trb_pi.empty:
                                 for _bm_col in ["num_persons", "num_bots", "manual_run_mins",
                                                 "bot_run_mins", "run_interval_value",
-                                                "run_interval_unit", "run_frequency"]:
+                                                "run_interval_unit", "run_frequency",
+                                                "bot_tracking_mode"]:
                                     if _bm_col in st.session_state.projects.columns:
                                         st.session_state.projects[_bm_col] = (
                                             st.session_state.projects[_bm_col].astype(object)
@@ -6003,57 +6012,152 @@ elif st.session_state.active_tab == "projects" and role not in ("employee",):
                                 st.session_state.projects.loc[_trb_pi, "run_interval_value"] = _trb_inp_riv
                                 st.session_state.projects.loc[_trb_pi, "run_interval_unit"]  = _trb_inp_riu
                                 st.session_state.projects.loc[_trb_pi, "run_frequency"]      = _trb_inp_rif
+                                st.session_state.projects.loc[_trb_pi, "bot_tracking_mode"]  = _trb_inp_btm
                                 # synchronous save — guarantees DB write completes before rerun
                                 _bm_saved_ok = save_projects(st.session_state.projects)
                                 load_projects.clear()   # flush cache so next load reads fresh DB
                                 auth.log_audit(cu["id"], cu["name"], "UPDATE", "projects",
                                                str(_trk_pid),
-                                               f'Bot settings updated for "{_trk_sel}"')
+                                               f'Bot settings updated for "{_trk_sel}" (mode: {_trb_inp_btm})')
                                 if _bm_saved_ok:
                                     st.session_state.toast = {"msg": "Bot settings saved!", "type": "success"}
                                 else:
                                     st.session_state.toast = {"msg": "Save failed — check DB connection.", "type": "error"}
                                 st.rerun()
+                        # Log section label changes based on tracking mode
+                        _trb_is_time_mode = (_trb_btm == "Time Based")
+                        _trb_log_label = "📅 Log Daily Time (mins)" if _trb_is_time_mode else "📅 Log Daily Quantity"
                         st.markdown(
-                            '<div style="font-size:10px;font-weight:700;color:#1F3B4D;margin:10px 0 4px">'
-                            '📅 Log Daily Quantity</div>',
+                            f'<div style="font-size:10px;font-weight:700;color:#1F3B4D;margin:10px 0 4px">'
+                            f'{_trb_log_label}</div>',
                             unsafe_allow_html=True
                         )
                         _trbl1, _trbl2, _trbl3 = st.columns([2, 2, 1])
                         _trb_log_date = _trbl1.date_input("Date", value=date.today(),
                                                           format="DD/MM/YYYY", key=f"trb_logdate_{_trk_pid}")
-                        _trb_log_qty  = _trbl2.number_input("Quantity", min_value=0, value=0,
-                                                             step=1, key=f"trb_logqty_{_trk_pid}")
+                        if _trb_is_time_mode:
+                            _trb_log_time_mins = _trbl2.number_input(
+                                "Time (mins)", min_value=0.0, value=0.0, step=1.0,
+                                key=f"trb_logtm_{_trk_pid}"
+                            )
+                            # convert minutes back to quantity units for storage
+                            _trb_log_qty = int(round(_trb_log_time_mins / _trb_rim)) if _trb_rim > 0 else 0
+                        else:
+                            _trb_log_qty = _trbl2.number_input("Quantity", min_value=0, value=0,
+                                                                step=1, key=f"trb_logqty_{_trk_pid}")
+                            _trb_log_time_mins = _trb_log_qty * _trb_rim
                         _trbl3.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
                         if _trbl3.button("📥 Log", key=f"trb_log_{_trk_pid}", use_container_width=True):
                             auth.upsert_bot_metric_log(_trk_pid, _trk_sel,
                                                        str(_trb_log_date), _trb_log_qty)
+                            _trb_log_audit_detail = (
+                                f'{_trb_log_time_mins:.0f} mins logged for "{_trk_sel}" on {_trb_log_date}'
+                                if _trb_is_time_mode else
+                                f'Qty {_trb_log_qty} logged for "{_trk_sel}" on {_trb_log_date}'
+                            )
                             auth.log_audit(cu["id"], cu["name"], "CREATE", "bot_metric_logs",
-                                           str(_trk_pid),
-                                           f'Qty {_trb_log_qty} logged for "{_trk_sel}" on {_trb_log_date}')
-                            st.session_state.toast = {"msg": f"Logged {_trb_log_qty} for {_trb_log_date.strftime('%d/%m/%Y')}!", "type": "success"}
+                                           str(_trk_pid), _trb_log_audit_detail)
+                            _trb_toast_msg = (
+                                f"Logged {_trb_log_time_mins:.0f} mins for {_trb_log_date.strftime('%d/%m/%Y')}!"
+                                if _trb_is_time_mode else
+                                f"Logged {_trb_log_qty} for {_trb_log_date.strftime('%d/%m/%Y')}!"
+                            )
+                            st.session_state.toast = {"msg": _trb_toast_msg, "type": "success"}
                             st.rerun()
                         # live calculation preview
                         if _trb_rim > 0:
                             _prev_run_mins = _trb_log_qty * _trb_rim
                             _prev_run_hrs  = _prev_run_mins / 60
-                            st.markdown(
-                                f'<div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;'
-                                f'padding:8px 12px;margin-top:6px;font-size:11px;color:#0369A1">'
-                                f'<b>This entry:</b> {_trb_log_qty} runs × {_trb_riv} {_trb_riu.lower()} = '
-                                f'<b>{_prev_run_mins:.0f} mins ({_prev_run_hrs:.2f} hrs)</b> &nbsp;|&nbsp; '
-                                f'<b>Est. Mo. Runs:</b> {_trb_est_mo_runs:,} &nbsp;|&nbsp; '
-                                f'<b>Freq:</b> {_trb_rif}'
-                                f'</div>',
-                                unsafe_allow_html=True
-                            )
+                            if _trb_is_time_mode:
+                                st.markdown(
+                                    f'<div style="background:#F0FFF4;border:1px solid #BBF7D0;border-radius:8px;'
+                                    f'padding:8px 12px;margin-top:6px;font-size:11px;color:#065F46">'
+                                    f'<b>This entry:</b> {_trb_log_time_mins:.0f} mins → '
+                                    f'<b>{_trb_log_qty} runs</b> &nbsp;|&nbsp; '
+                                    f'<b>Est. Mo. Runs:</b> {_trb_est_mo_runs:,} &nbsp;|&nbsp; '
+                                    f'<b>Freq:</b> {_trb_rif}'
+                                    f'</div>',
+                                    unsafe_allow_html=True
+                                )
+                            else:
+                                st.markdown(
+                                    f'<div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;'
+                                    f'padding:8px 12px;margin-top:6px;font-size:11px;color:#0369A1">'
+                                    f'<b>This entry:</b> {_trb_log_qty} runs × {_trb_riv} {_trb_riu.lower()} = '
+                                    f'<b>{_prev_run_mins:.0f} mins ({_prev_run_hrs:.2f} hrs)</b> &nbsp;|&nbsp; '
+                                    f'<b>Est. Mo. Runs:</b> {_trb_est_mo_runs:,} &nbsp;|&nbsp; '
+                                    f'<b>Freq:</b> {_trb_rif}'
+                                    f'</div>',
+                                    unsafe_allow_html=True
+                                )
                     if _trb_logs_all:
                         with st.expander(f"📋 Log History ({len(_trb_logs_all)} entries)", expanded=False):
-                            _trb_log_df = pd.DataFrame(_trb_logs_all[:15])[["log_date", "qty"]].copy()
-                            _trb_log_df["run_time_mins"] = (_trb_log_df["qty"] * _trb_rim).round(1)
-                            _trb_log_df["est_mo_runs"]   = _trb_est_mo_runs
-                            _trb_log_df.columns = ["Date", "Qty", "Run Time (mins)", "Est. Mo. Runs"]
-                            st.dataframe(_trb_log_df, use_container_width=True, hide_index=True)
+                            # ── Date filter ──────────────────────────────────
+                            _lhf1, _lhf2 = st.columns(2)
+                            _lh_from = _lhf1.date_input("From", value=date.today().replace(day=1),
+                                                         format="DD/MM/YYYY", key=f"lh_from_{_trk_pid}")
+                            _lh_to   = _lhf2.date_input("To",   value=date.today(),
+                                                         format="DD/MM/YYYY", key=f"lh_to_{_trk_pid}")
+                            _trb_filtered = [
+                                l for l in _trb_logs_all
+                                if _lh_from.isoformat() <= str(l.get("log_date","")) <= _lh_to.isoformat()
+                            ]
+                            # ── Table ─────────────────────────────────────────
+                            if _trb_filtered:
+                                _trb_log_df = pd.DataFrame(_trb_filtered)[["log_date", "qty"]].copy()
+                                _trb_log_df["run_time_mins"] = (_trb_log_df["qty"] * _trb_rim).round(1)
+                                _trb_log_df["est_mo_runs"]   = _trb_est_mo_runs
+                                _trb_log_df.columns = ["Date", "Qty", "Run Time (mins)", "Est. Mo. Runs"]
+                                st.dataframe(_trb_log_df, use_container_width=True, hide_index=True)
+                            else:
+                                st.caption("No logs in selected date range.")
+                            # ── Edit ─────────────────────────────────────────
+                            if _trb_filtered and role in ("admin", "lead", "manager"):
+                                st.markdown(
+                                    '<div style="font-size:10px;font-weight:700;color:#1F3B4D;margin:10px 0 4px">'
+                                    '✏️ Edit a Log Entry</div>',
+                                    unsafe_allow_html=True
+                                )
+                                _lh_dates = [l["log_date"] for l in _trb_filtered]
+                                _lh_sel_date = st.selectbox(
+                                    "Select date to edit", _lh_dates,
+                                    key=f"lh_sel_{_trk_pid}"
+                                )
+                                _lh_sel_log = next(
+                                    (l for l in _trb_filtered if l["log_date"] == _lh_sel_date), None
+                                )
+                                if _lh_sel_log:
+                                    _lhea, _lheb, _lhec = st.columns([2, 2, 1])
+                                    _lh_edit_date = _lhea.date_input(
+                                        "Date", value=date.fromisoformat(_lh_sel_date),
+                                        format="DD/MM/YYYY", key=f"lh_edate_{_trk_pid}"
+                                    )
+                                    _lh_cur_qty = int(_lh_sel_log.get("qty", 0) or 0)
+                                    if _trb_btm == "Time Based" and _trb_rim > 0:
+                                        _lh_cur_mins = _lh_cur_qty * _trb_rim
+                                        _lh_edit_mins = _lheb.number_input(
+                                            "Time (mins)", min_value=0.0,
+                                            value=float(_lh_cur_mins), step=1.0,
+                                            key=f"lh_emins_{_trk_pid}"
+                                        )
+                                        _lh_edit_qty = int(round(_lh_edit_mins / _trb_rim))
+                                    else:
+                                        _lh_edit_qty = _lheb.number_input(
+                                            "Quantity", min_value=0,
+                                            value=_lh_cur_qty, step=1,
+                                            key=f"lh_eqty_{_trk_pid}"
+                                        )
+                                    _lhec.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+                                    if _lhec.button("💾 Save", key=f"lh_esave_{_trk_pid}", use_container_width=True, type="primary"):
+                                        auth.upsert_bot_metric_log(
+                                            _trk_pid, _trk_sel,
+                                            str(_lh_edit_date), _lh_edit_qty
+                                        )
+                                        auth.log_audit(cu["id"], cu["name"], "UPDATE", "bot_metric_logs",
+                                                       str(_trk_pid),
+                                                       f'Log edited for "{_trk_sel}" on {_lh_edit_date}: qty={_lh_edit_qty}')
+                                        st.session_state.toast = {"msg": "Log updated!", "type": "success"}
+                                        st.rerun()
                     elif _trb_nb == 0:
                         st.info("Configure bot settings above to start tracking.")
 
